@@ -8,6 +8,7 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Truck, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import Link from 'next/link';
 
 export default function LoginForm() {
   const [username, setUsername] = useState('');
@@ -111,6 +112,12 @@ export default function LoginForm() {
               {isSubmitting ? 'Signing In...' : 'Sign In'}
             </Button>
           </form>
+          <div className="mt-6 text-center text-sm">
+            Don&apos;t have an account?{' '}
+            <Link href="/signup" className="font-medium text-primary hover:underline">
+              Sign Up
+            </Link>
+          </div>
         </CardContent>
       </Card>
     </div>
