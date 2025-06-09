@@ -1,10 +1,13 @@
 'use client';
 
+import { useState } from 'react';
 import DailyHitRateChart from '@/components/dashboard/DailyHitRateChart';
 import DowntimeOverviewChart from '@/components/dashboard/DowntimeOverviewChart';
+import UnitHistory from '@/components/dashboard/UnitHistory';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/context/AuthContext';
+import { Input } from '@/components/ui/input';
 import { CheckCircle, AlertTriangle, Clock, ScanLine } from 'lucide-react';
 import Link from 'next/link';
 
@@ -16,6 +19,8 @@ export default function DashboardPage() {
   const safeForklifts = 5; // Assuming 5 active forklifts
   const unsafeForklifts = 1;
   const upcomingInspections = 3;
+
+  const [selectedUnitId, setSelectedUnitId] = useState('');
 
   return (
     <div className="space-y-8">
@@ -79,6 +84,15 @@ export default function DashboardPage() {
       <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
         <DailyHitRateChart />
         <DowntimeOverviewChart />
+      </div>
+
+      <div className="space-y-4">
+        <h2 className="text-2xl font-headline font-bold">Unit History</h2>
+        <div>
+          <label htmlFor="unitIdInput" className="block text-sm font-medium text-gray-700">Enter Unit ID:</label>
+          <Input id="unitIdInput" type="text" value={selectedUnitId} onChange={(e) => setSelectedUnitId(e.target.value)} className="mt-1 block w-full max-w-sm" />
+        </div>
+        <UnitHistory unitId={selectedUnitId} />
       </div>
     </div>
   );
