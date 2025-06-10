@@ -1,3 +1,4 @@
+
 'use client';
 
 import { BarChart } from 'lucide-react';
@@ -10,16 +11,14 @@ import {
   ChartLegendContent,
 } from "@/components/ui/chart"
 import { Bar, CartesianGrid, XAxis, YAxis, ResponsiveContainer, BarChart as RechartsBarChart } from "recharts"
+import type { StoredInspectionReport } from '@/lib/types';
+import { useMemo } from 'react';
+import { format, subDays, parseISO } from 'date-fns';
 
-const chartData = [
-  { date: "Mon", inspections: 12 },
-  { date: "Tue", inspections: 15 },
-  { date: "Wed", inspections: 10 },
-  { date: "Thu", inspections: 18 },
-  { date: "Fri", inspections: 13 },
-  { date: "Sat", inspections: 9 },
-  { date: "Sun", inspections: 7 },
-];
+
+interface DailyHitRateChartProps {
+  reports: StoredInspectionReport[];
+}
 
 const chartConfig = {
   inspections: {
@@ -29,15 +28,38 @@ const chartConfig = {
 } satisfies import("@/components/ui/chart").ChartConfig;
 
 
-export default function DailyHitRateChart() {
+export default function DailyHitRateChart({ reports }: DailyHitRateChartProps) {
+
+  const chartData = useMemo(() => {
+    const last7Days: { date: string, inspections: number }[] = [];
+    const countsByDate: Record<string, number> = {};
+
+    reports.forEach(report => {
+      const reportDateStr = report.date.split('T')[0]; // YYYY-MM-DD
+      countsByDate[reportDateStr] = (countsByDate[reportDateStr] || 0) + 1;
+    });
+    
+    for (let i = 6; i >= 0; i--) {
+      const date = subDays(new Date(), i);
+      const dateString = format(date, 'yyyy-MM-dd');
+      const dayName = format(date, 'E'); // Mon, Tue, etc.
+      last7Days.push({
+        date: dayName,
+        inspections: countsByDate[dateString] || 0,
+      });
+    }
+    return last7Days;
+  }, [reports]);
+
+
   return (
     <Card className="shadow-lg">
       <CardHeader>
         <CardTitle className="flex items-center">
           <BarChart className="mr-2 h-6 w-6 text-primary" />
-          Daily Inspection Hit Rate
+          Daily Inspection Rate
         </CardTitle>
-        <CardDescription>Number of inspections completed per day this week.</CardDescription>
+        <CardDescription>Number of inspections completed per day (last 7 days).</CardDescription>
       </CardHeader>
       <CardContent>
         <ChartContainer config={chartConfig} className="h-[300px] w-full">
@@ -48,9 +70,8 @@ export default function DailyHitRateChart() {
               tickLine={false}
               tickMargin={10}
               axisLine={false}
-              tickFormatter={(value) => value.slice(0, 3)}
             />
-            <YAxis />
+            <YAxis allowDecimals={false}/>
             <ChartTooltip content={<ChartTooltipContent />} />
             <ChartLegend content={<ChartLegendContent />} />
             <Bar dataKey="inspections" fill="var(--color-inspections)" radius={4} />

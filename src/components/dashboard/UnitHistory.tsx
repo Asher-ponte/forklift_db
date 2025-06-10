@@ -1,38 +1,55 @@
-import React, { useEffect, useState } from 'react';
+
+import React from 'react';
+import type { StoredInspectionReport } from '@/lib/types';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
+import { List } from 'lucide-react';
 
 interface UnitHistoryProps {
   unitId: string;
+  reports: StoredInspectionReport[];
 }
 
-interface UnitHistoryItem {
-  timestamp: string;
-  eventType: string;
-  description: string;
-}
+const UnitHistory: React.FC<UnitHistoryProps> = ({ unitId, reports }) => {
+  if (!unitId) {
+    return <p className="text-muted-foreground">Please enter a Unit ID to see its history.</p>;
+  }
 
-const UnitHistory: React.FC<UnitHistoryProps> = ({ unitId }) => {
-  const [historyData, setHistoryData] = useState<UnitHistoryItem[]>([]);
+  const historyData = reports
+    .filter(report => report.unitId.toLowerCase() === unitId.toLowerCase())
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); // Sort by most recent first
 
-  useEffect(() => {
-    // Simulate fetching data based on unitId
-    const mockHistory: UnitHistoryItem[] = [
-      { timestamp: '2023-10-27 10:00', eventType: 'Inspection Completed', description: 'Passed safety check.' },
-      { timestamp: '2023-10-26 14:30', eventType: 'Downtime Started', description: 'Flat tire on front right.' },
-      { timestamp: '2023-10-26 16:00', eventType: 'Downtime Ended', description: 'Tire replaced.' },
-      { timestamp: '2023-10-25 09:00', eventType: 'Maintenance Performed', description: 'Oil change and filter replacement.' },
-    ];
-    setHistoryData(mockHistory);
-  }, [unitId]); // Fetch data whenever unitId changes
+  if (historyData.length === 0) {
+    return <p className="text-muted-foreground">No inspection history found for Unit ID: {unitId}</p>;
+  }
 
   return (
-    <div>
-      Displaying history for Unit ID: {unitId}
-      <h2>History:</h2>
-      <ul>
-        {historyData.map((item, index) => (
-          <li key={index}>{`${item.timestamp} - ${item.eventType}: ${item.description}`}</li>
-        ))}
-      </ul>
+    <div className="mt-4">
+      <h3 className="text-lg font-semibold mb-2 text-primary">Inspection Log for: {unitId}</h3>
+      <ScrollArea className="h-72 w-full rounded-md border p-4 bg-secondary/30">
+        {historyData.length > 0 ? (
+          <ul className="space-y-3">
+            {historyData.map((item) => (
+              <li key={item.id} className="p-3 bg-background rounded-md shadow-sm border border-border">
+                <div className="flex justify-between items-center">
+                  <p className="font-medium text-sm">
+                    {new Date(item.date).toLocaleString()}
+                  </p>
+                  <Badge variant={item.status === 'Safe' ? 'default' : 'destructive'}
+                         className={item.status === 'Safe' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}>
+                    {item.status}
+                  </Badge>
+                </div>
+                <p className="text-xs text-muted-foreground">Operator: {item.operator}</p>
+                {/* Optionally, add a button/link to view full report details if needed */}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-muted-foreground text-center py-4">No inspection records found for this unit.</p>
+        )}
+      </ScrollArea>
     </div>
   );
 };
