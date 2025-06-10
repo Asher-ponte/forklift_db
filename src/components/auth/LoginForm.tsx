@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -30,26 +31,20 @@ export default function LoginForm() {
     }
     setIsSubmitting(true);
     try {
-      // Simulate API call for login
-      // In a real app, you'd call your backend API here
-      // For now, we'll use a mock login that always succeeds for 'operator'
-      if (username === 'operator' && password === 'password') {
-        await login(username, 'operator');
-        toast({
-          title: "Login Successful",
-          description: `Welcome back, ${username}!`,
-        });
-      } else if (username === 'supervisor' && password === 'password') {
-        await login(username, 'supervisor');
-         toast({
-          title: "Login Successful",
-          description: `Welcome back, ${username}!`,
-        });
-      }
-      else {
+      // Simulate API call for login or direct credential check
+      // In a real app, you'd ideally call a backend API endpoint for login.
+      // For now, we use a mock login that always succeeds for 'operator' and 'supervisor'.
+      // The actual user state update and backend health check will be handled by context's login.
+      if ((username === 'operator' && password === 'password') || (username === 'supervisor' && password === 'password')) {
+        // Pass the role to the context's login function
+        const role = username as 'operator' | 'supervisor';
+        await login(username, role); 
+        // The success toast (including DB check) is now handled by the AuthContext's login method.
+      } else {
         throw new Error('Invalid credentials');
       }
     } catch (error) {
+      // This catch block will handle 'Invalid credentials' or any error thrown by context.login (if it were to throw)
       toast({
         title: "Login Failed",
         description: (error instanceof Error) ? error.message : "An unknown error occurred.",
@@ -77,7 +72,7 @@ export default function LoginForm() {
               <Input
                 id="username"
                 type="text"
-                placeholder="e.g. operator"
+                placeholder="e.g. operator / supervisor"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
