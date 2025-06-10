@@ -48,16 +48,26 @@ export default function DashboardPage() {
       // Process Inspection Reports
       let fetchedReports: StoredInspectionReport[] = [];
       if (reportsResponse.ok) {
-        const reportsData = await reportsResponse.json();
-        if (Array.isArray(reportsData)) {
-          fetchedReports = reportsData.map((report: any) => ({
+        const responseData = await reportsResponse.json();
+        let reportsArray: any[] | undefined;
+
+        if (Array.isArray(responseData)) {
+          reportsArray = responseData;
+        } else if (responseData && Array.isArray(responseData.data)) {
+          reportsArray = responseData.data;
+        } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
+          // Handle case where API returns an empty object {} for no reports
+          reportsArray = [];
+        }
+
+        if (reportsArray) {
+          fetchedReports = reportsArray.map((report: any) => ({
             ...report,
-            // Ensure items is always an array, even if null/undefined from API for some reports
             items: Array.isArray(report.items) ? report.items : [], 
           }));
         } else {
-          console.error("API did not return an array for inspection reports:", reportsData);
-          toast({ title: "Data Error", description: "Invalid format for inspection reports from server.", variant: "destructive" });
+          console.error("API returned an unexpected format for inspection reports:", responseData);
+          toast({ title: "Data Format Error", description: "Unexpected data format received for inspection reports from server.", variant: "destructive" });
         }
       } else {
         const errorText = await reportsResponse.text();
@@ -68,12 +78,23 @@ export default function DashboardPage() {
       // Process Downtime Logs
       let fetchedDowntimeLogs: StoredDowntimeLog[] = [];
       if (downtimeResponse.ok) {
-        const downtimeData = await downtimeResponse.json();
-        if (Array.isArray(downtimeData)) {
-          fetchedDowntimeLogs = downtimeData;
+        const responseData = await downtimeResponse.json();
+        let downtimeArray: any[] | undefined;
+        
+        if (Array.isArray(responseData)) {
+          downtimeArray = responseData;
+        } else if (responseData && Array.isArray(responseData.data)) {
+          downtimeArray = responseData.data;
+        } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
+           // Handle case where API returns an empty object {} for no logs
+          downtimeArray = [];
+        }
+
+        if (downtimeArray) {
+          fetchedDowntimeLogs = downtimeArray;
         } else {
-          console.error("API did not return an array for downtime logs:", downtimeData);
-          toast({ title: "Data Error", description: "Invalid format for downtime logs from server.", variant: "destructive" });
+          console.error("API returned an unexpected format for downtime logs:", responseData);
+          toast({ title: "Data Format Error", description: "Unexpected data format received for downtime logs from server.", variant: "destructive" });
         }
       } else {
         const errorText = await downtimeResponse.text();
@@ -122,7 +143,6 @@ export default function DashboardPage() {
     } catch (error) {
       console.error("Failed to load dashboard data from API:", error);
       toast({ title: "Dashboard Load Error", description: (error instanceof Error) ? error.message : "An unexpected error occurred.", variant: "destructive" });
-      // Keep existing data or reset, depending on desired behavior
       setAllReports([]);
       setAllDowntimeLogs([]);
       setStats(prevStats => ({
@@ -233,3 +253,4 @@ export default function DashboardPage() {
   );
 
     
+}
