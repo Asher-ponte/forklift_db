@@ -54,10 +54,12 @@ const departmentSchema = z.object({
 });
 type DepartmentFormData = z.infer<typeof departmentSchema>;
 
+const NONE_SELECT_VALUE = "__NONE__"; // For "None" option in select
+
 const mheUnitSchema = z.object({
   unit_code: z.string().min(1, "MHE Unit Code is required"),
   name: z.string().min(1, "MHE Name is required"),
-  department_id: z.string().nullable().optional(), // Changed to nullable
+  department_id: z.string().nullable().optional(),
   type: z.string().optional().nullable(),
   status: z.enum(['active', 'inactive', 'maintenance']).default('active'),
 });
@@ -72,7 +74,6 @@ const checklistItemSchema = z.object({
 });
 type ChecklistItemFormData = z.infer<typeof checklistItemSchema>;
 
-const NONE_SELECT_VALUE = "__NONE__";
 
 export default function DataManagementPage() {
   const { user, loading: authLoading } = useAuth();
@@ -105,14 +106,26 @@ export default function DataManagementPage() {
 
   // --- Data Fetching Callbacks ---
   const fetchDepartments = useCallback(async () => {
+    if (!apiBaseUrl) {
+      toast({ title: "Configuration Error", description: "API base URL is not configured. Cannot fetch data.", variant: "destructive" });
+      setIsLoadingDepartments(false);
+      return;
+    }
     setIsLoadingDepartments(true);
     try {
       const response = await fetch(`${apiBaseUrl}/departments_api.php`);
-      if (!response.ok) throw new Error(`Failed to fetch departments: ${response.statusText}`);
+      console.log('Fetch Departments Response Status:', response.status);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Fetch Departments Error Text:', errorText);
+        throw new Error(`Failed to fetch departments: ${response.status} ${response.statusText}. Check Network tab for details.`);
+      }
       const data = await response.json();
+      console.log('Fetched Departments Data:', data);
       setDepartments(Array.isArray(data) ? data : []);
     } catch (error) {
-      toast({ title: "Error Fetching Departments", description: (error instanceof Error) ? error.message : "Could not fetch departments.", variant: "destructive" });
+      console.error('Error in fetchDepartments:', error);
+      toast({ title: "Error Fetching Departments", description: (error instanceof Error) ? error.message : "Could not fetch departments. Check console for details.", variant: "destructive" });
       setDepartments([]);
     } finally {
       setIsLoadingDepartments(false);
@@ -120,18 +133,30 @@ export default function DataManagementPage() {
   }, [apiBaseUrl, toast]);
 
   const fetchMheUnits = useCallback(async () => {
+    if (!apiBaseUrl) {
+      // Already handled by fetchDepartments, but good for safety
+      setIsLoadingMheUnits(false);
+      return;
+    }
     setIsLoadingMheUnits(true);
     try {
       const response = await fetch(`${apiBaseUrl}/mhe_units_api.php`);
-      if (!response.ok) throw new Error(`Failed to fetch MHE units: ${response.statusText}`);
+      console.log('Fetch MHE Units Response Status:', response.status);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Fetch MHE Units Error Text:', errorText);
+        throw new Error(`Failed to fetch MHE units: ${response.status} ${response.statusText}. Check Network tab for details.`);
+      }
       const data: MheUnit[] = await response.json();
-      const enhancedData = data.map(mhe => ({
+      console.log('Fetched MHE Units Data:', data);
+      const enhancedData = Array.isArray(data) ? data.map(mhe => ({
         ...mhe,
         department_name: departments.find(d => d.id === mhe.department_id)?.name || 'N/A'
-      }));
-      setMheUnits(Array.isArray(enhancedData) ? enhancedData : []);
+      })) : [];
+      setMheUnits(enhancedData);
     } catch (error) {
-      toast({ title: "Error Fetching MHE Units", description: (error instanceof Error) ? error.message : "Could not fetch MHE units.", variant: "destructive" });
+      console.error('Error in fetchMheUnits:', error);
+      toast({ title: "Error Fetching MHE Units", description: (error instanceof Error) ? error.message : "Could not fetch MHE units. Check console for details.", variant: "destructive" });
       setMheUnits([]);
     } finally {
       setIsLoadingMheUnits(false);
@@ -139,14 +164,26 @@ export default function DataManagementPage() {
   }, [apiBaseUrl, toast, departments]);
 
   const fetchChecklistItems = useCallback(async () => {
+     if (!apiBaseUrl) {
+      // Already handled by fetchDepartments, but good for safety
+      setIsLoadingChecklistItems(false);
+      return;
+    }
     setIsLoadingChecklistItems(true);
     try {
       const response = await fetch(`${apiBaseUrl}/checklist_items_api.php`);
-      if (!response.ok) throw new Error(`Failed to fetch checklist items: ${response.statusText}`);
+      console.log('Fetch Checklist Items Response Status:', response.status);
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Fetch Checklist Items Error Text:', errorText);
+        throw new Error(`Failed to fetch checklist items: ${response.status} ${response.statusText}. Check Network tab for details.`);
+      }
       const data = await response.json();
+      console.log('Fetched Checklist Items Data:', data);
       setChecklistItems(Array.isArray(data) ? data : []);
     } catch (error) {
-      toast({ title: "Error Fetching Checklist Items", description: (error instanceof Error) ? error.message : "Could not fetch checklist items.", variant: "destructive" });
+      console.error('Error in fetchChecklistItems:', error);
+      toast({ title: "Error Fetching Checklist Items", description: (error instanceof Error) ? error.message : "Could not fetch checklist items. Check console for details.", variant: "destructive" });
       setChecklistItems([]);
     } finally {
       setIsLoadingChecklistItems(false);
@@ -162,10 +199,11 @@ export default function DataManagementPage() {
   }, [user, fetchDepartments, fetchChecklistItems]);
   
   useEffect(() => {
-    if (user?.role === 'supervisor' && departments.length > 0 && !isLoadingDepartments) {
+    // Fetch MHE Units only after the attempt to fetch departments has concluded
+    if (user?.role === 'supervisor' && !isLoadingDepartments) {
          fetchMheUnits();
     }
-  }, [user, departments, fetchMheUnits, isLoadingDepartments])
+  }, [user, fetchMheUnits, isLoadingDepartments]);
 
 
   // --- Form Submission Handlers ---
@@ -190,7 +228,7 @@ export default function DataManagementPage() {
         throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
       }
       toast({ title: "Success", description: "Department added successfully." });
-      fetchDepartments();
+      fetchDepartments(); // Re-fetch
       resetDeptForm();
       setIsAddDeptModalOpen(false);
     } catch (error) {
@@ -223,7 +261,7 @@ export default function DataManagementPage() {
         throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
       }
       toast({ title: "Success", description: "MHE unit added successfully." });
-      fetchMheUnits();
+      fetchMheUnits(); // Re-fetch
       resetMheForm();
       setIsAddMheModalOpen(false);
     } catch (error) {
@@ -243,15 +281,13 @@ export default function DataManagementPage() {
         try {
           errorData = await response.json();
         } catch (e) {
-          // 409 is less likely for checklist items based on user-provided fields in the current schema
-          // but other errors can occur.
           const textError = await response.text().catch(() => '');
           throw new Error(textError ? `Server error: ${textError.substring(0,100)}...` : errorData.message);
         }
         throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
       }
       toast({ title: "Success", description: "Checklist item added successfully." });
-      fetchChecklistItems();
+      fetchChecklistItems(); // Re-fetch
       resetItemForm();
       setIsAddItemModalOpen(false);
     } catch (error) {
@@ -269,9 +305,10 @@ export default function DataManagementPage() {
   }
 
   if (!user || user.role !== 'supervisor') {
+    // Client-side redirect attempt
     if (typeof window !== 'undefined' && user && user.role !== 'supervisor') {
-        router.replace('/dashboard');
-        return (
+        router.replace('/dashboard'); // Or some other appropriate page
+        return ( // Temporary message while redirecting
              <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)] text-center">
                 <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
                 <h2 className="text-2xl font-semibold text-destructive">Access Denied</h2>
@@ -279,6 +316,7 @@ export default function DataManagementPage() {
             </div>
         );
     }
+    // Fallback for SSR or if redirect hasn't happened yet
      return (
         <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)] text-center">
             <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
@@ -342,7 +380,7 @@ export default function DataManagementPage() {
               </Dialog>
             </CardHeader>
             <CardContent>
-              {isLoadingDepartments ? <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary"/> : (
+              {isLoadingDepartments ? <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : (
                 <Table>
                   <TableHeader><TableRow><TableHead>ID</TableHead><TableHead>Name</TableHead><TableHead>Description</TableHead></TableRow></TableHeader>
                   <TableBody>
@@ -392,6 +430,7 @@ export default function DataManagementPage() {
                             onValueChange={(selectedValue) => {
                                 field.onChange(selectedValue === NONE_SELECT_VALUE ? null : selectedValue);
                             }}
+                            // Ensure the value prop correctly reflects null/undefined for the "None" state
                             value={field.value === null || field.value === undefined ? NONE_SELECT_VALUE : field.value}
                           >
                             <SelectTrigger className="mt-1">
@@ -439,7 +478,7 @@ export default function DataManagementPage() {
               </Dialog>
             </CardHeader>
             <CardContent>
-             {isLoadingMheUnits ? <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary"/> : (
+             {isLoadingMheUnits ? <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : (
                 <Table>
                   <TableHeader><TableRow><TableHead>Unit Code</TableHead><TableHead>Name</TableHead><TableHead>Department</TableHead><TableHead>Type</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
                   <TableBody>
@@ -511,7 +550,7 @@ export default function DataManagementPage() {
               </Dialog>
             </CardHeader>
             <CardContent>
-            {isLoadingChecklistItems ? <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary"/> : (
+            {isLoadingChecklistItems ? <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : (
                 <Table>
                   <TableHeader><TableRow><TableHead className="w-[100px]">Part Name</TableHead><TableHead>Question</TableHead><TableHead>QR Data</TableHead><TableHead>Active</TableHead></TableRow></TableHeader>
                   <TableBody>
@@ -534,6 +573,3 @@ export default function DataManagementPage() {
     </div>
   );
 }
-
-
-    
