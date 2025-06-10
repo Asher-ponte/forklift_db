@@ -6,18 +6,25 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileText, Download, Filter, CalendarDays, RefreshCw } from "lucide-react";
+import { FileText, Download, Filter, CalendarDays, RefreshCw, CheckCircle, AlertCircle, ImageOff } from "lucide-react";
 import Image from 'next/image';
 import { useState, useMemo, useEffect } from "react";
 import type { StoredInspectionReport } from '@/lib/types';
+import type { InspectionRecordClientState } from '@/lib/mock-data';
 import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
 
 const LOCAL_STORAGE_REPORTS_KEY = 'forkliftInspectionReports';
 
 // Mock data for the report (can be kept as a fallback or initial data)
 const mockReportData = [
-  { id: 'mock_insp001', unitId: 'FL001', date: '2024-07-15T10:00:00Z', operator: 'John Doe', status: 'Safe' as 'Safe' | 'Unsafe', photoUrl: 'https://placehold.co/100x75?text=Fork+View' , dataAiHint: "forklift"},
-  { id: 'mock_insp002', unitId: 'FL002', date: '2024-07-15T11:00:00Z', operator: 'Jane Smith', status: 'Unsafe' as 'Safe' | 'Unsafe', photoUrl: 'https://placehold.co/100x75?text=Tire+Issue', dataAiHint: "forklift tire"},
+  { id: 'mock_insp001', unitId: 'FL001', date: '2024-07-15T10:00:00Z', operator: 'John Doe', status: 'Safe' as 'Safe' | 'Unsafe', photoUrl: 'https://placehold.co/100x75.png', dataAiHint: "forklift", items: [] },
+  { id: 'mock_insp002', unitId: 'FL002', date: '2024-07-15T11:00:00Z', operator: 'Jane Smith', status: 'Unsafe' as 'Safe' | 'Unsafe', photoUrl: 'https://placehold.co/100x75.png', dataAiHint: "forklift tire", items: [] },
 ];
 
 // Type for display in the table, derived from StoredInspectionReport
@@ -27,9 +34,10 @@ interface ReportDisplayEntry {
   date: string; // Keep as string for direct display after formatting
   operator: string;
   status: 'Safe' | 'Unsafe';
-  photoUrl: string;
-  dataAiHint: string;
+  representativePhotoUrl: string; // Photo for the summary row
+  representativeDataAiHint: string; // Hint for the summary row photo
   rawDate: Date; // For sorting
+  items: InspectionRecordClientState[];
 }
 
 export default function ReportPage() {
@@ -44,9 +52,12 @@ export default function ReportPage() {
     const combinedReports: ReportDisplayEntry[] = [
       ...mockReportData.map(mock => ({
         ...mock,
-        photoUrl: mock.photoUrl || PLACEHOLDER_IMAGE_DATA_URL,
-        dataAiHint: mock.dataAiHint || 'forklift',
+        representativePhotoUrl: mock.photoUrl || PLACEHOLDER_IMAGE_DATA_URL,
+        representativeDataAiHint: mock.dataAiHint || 'forklift',
         rawDate: new Date(mock.date),
+        items: mock.items.length > 0 ? mock.items : [ // Add dummy item if mock items are empty for structure
+            { checklistItemId: 'mock-item', part_name: 'Mock Part', question: 'Is it okay?', is_safe: true, photo_url: mock.photoUrl, timestamp: new Date().toISOString(), completed: true }
+        ], 
       })),
       ...storedReports.map(report => {
         let representativePhoto = PLACEHOLDER_IMAGE_DATA_URL;
@@ -55,17 +66,17 @@ export default function ReportPage() {
           const unsafeItemWithPhoto = report.items.find(item => !item.is_safe && item.photo_url);
           if (unsafeItemWithPhoto) {
             representativePhoto = unsafeItemWithPhoto.photo_url!;
-            hint = report.unitId + " " + unsafeItemWithPhoto.part_name;
+            hint = unsafeItemWithPhoto.part_name;
           } else {
              const firstItemWithPhoto = report.items.find(item => item.photo_url);
              if(firstItemWithPhoto) representativePhoto = firstItemWithPhoto.photo_url!;
-             hint = report.unitId + " issue";
+             hint = "issue";
           }
         } else {
           const firstItemWithPhoto = report.items.find(item => item.photo_url);
           if(firstItemWithPhoto) {
             representativePhoto = firstItemWithPhoto.photo_url!;
-            hint = report.unitId + " " + firstItemWithPhoto.part_name;
+            hint = firstItemWithPhoto.part_name;
           }
         }
         return {
@@ -74,15 +85,22 @@ export default function ReportPage() {
           date: new Date(report.date).toLocaleString(),
           operator: report.operator,
           status: report.status,
-          photoUrl: representativePhoto,
-          dataAiHint: hint.substring(0,50), // Limit hint length
+          representativePhotoUrl: representativePhoto,
+          representativeDataAiHint: hint.substring(0,50),
           rawDate: new Date(report.date),
+          items: report.items,
         };
       })
     ];
     
-    // Deduplicate and sort by date descending
-    const uniqueReports = Array.from(new Map(combinedReports.map(item => [item.id, item])).values());
+    const uniqueReportsMap = new Map<string, ReportDisplayEntry>();
+    combinedReports.forEach(item => {
+        // Prioritize non-mock reports if IDs clash, or just use the first encountered
+        if (!uniqueReportsMap.has(item.id) || (uniqueReportsMap.get(item.id)?.items.length === 0 && item.items.length > 0)) {
+           uniqueReportsMap.set(item.id, item);
+        }
+    });
+    const uniqueReports = Array.from(uniqueReportsMap.values());
     uniqueReports.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
     
     setAllReports(uniqueReports);
@@ -101,7 +119,6 @@ export default function ReportPage() {
       if (filterDateRange.from && filterDateRange.to) {
         const fromDate = new Date(filterDateRange.from);
         const toDate = new Date(filterDateRange.to);
-        // Adjust toDate to be end of day for inclusive range
         toDate.setHours(23, 59, 59, 999);
         dateFilterMatch = entryDate >= fromDate && entryDate <= toDate;
       } else if (filterDateRange.from) {
@@ -118,18 +135,45 @@ export default function ReportPage() {
   }, [allReports, filterUnitId, filterDateRange]);
 
   const handleExportCsv = () => {
-    const headers = ["Inspection ID", "Unit ID", "Date", "Operator", "Status"];
-    const csvRows = [
-      headers.join(','),
-      ...filteredData.map(row => [row.id, row.unitId, row.date, row.operator, row.status].join(','))
-    ];
+    const headers = ["Inspection ID", "Unit ID", "Date", "Operator", "Overall Status", "Checklist Item", "Item Status", "Item Timestamp"];
+    const csvRows: string[] = [headers.join(',')];
+
+    filteredData.forEach(report => {
+      report.items.forEach(item => {
+        const row = [
+          report.id,
+          report.unitId,
+          report.date,
+          report.operator,
+          report.status,
+          item.part_name,
+          item.is_safe ? 'Safe' : 'Unsafe',
+          item.timestamp ? new Date(item.timestamp).toLocaleString() : 'N/A'
+        ].map(field => `"${String(field).replace(/"/g, '""')}"`); // Escape quotes
+        csvRows.push(row.join(','));
+      });
+       if (report.items.length === 0) { // Handle reports with no items for CSV
+        const row = [
+          report.id,
+          report.unitId,
+          report.date,
+          report.operator,
+          report.status,
+          'N/A',
+          'N/A',
+          'N/A'
+        ].map(field => `"${String(field).replace(/"/g, '""')}"`);
+        csvRows.push(row.join(','));
+      }
+    });
+
     const csvString = csvRows.join('\n');
     const blob = new Blob([csvString], { type: 'text/csv;charset=utf-8;' });
     const link = document.createElement('a');
     if (link.download !== undefined) {
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
-      link.setAttribute('download', `forklift_report_${new Date().toISOString().split('T')[0]}.csv`);
+      link.setAttribute('download', `forklift_report_detailed_${new Date().toISOString().split('T')[0]}.csv`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
@@ -145,7 +189,7 @@ export default function ReportPage() {
             <FileText className="mr-3 h-8 w-8 text-primary" />
             Forklift Inspection Report
           </CardTitle>
-          <CardDescription>View and filter forklift inspection history. Submitted reports are stored locally in your browser.</CardDescription>
+          <CardDescription>View and filter forklift inspection history. Click on a report to see item details. Submitted reports are stored locally in your browser.</CardDescription>
         </CardHeader>
       </Card>
 
@@ -201,51 +245,116 @@ export default function ReportPage() {
 
       <Card className="shadow-md">
         <CardContent className="p-0">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Unit ID</TableHead>
-                <TableHead><CalendarDays className="inline-block mr-1 h-4 w-4" />Date</TableHead>
-                <TableHead>Operator</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Photo</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filteredData.length > 0 ? filteredData.map((entry) => (
-                <TableRow key={entry.id}>
-                  <TableCell className="font-medium">{entry.unitId}</TableCell>
-                  <TableCell>{entry.date}</TableCell>
-                  <TableCell>{entry.operator}</TableCell>
-                  <TableCell>
-                    <Badge variant={entry.status === 'Safe' ? 'default' : 'destructive'} 
-                           className={entry.status === 'Safe' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'}>
-                      {entry.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    <Image 
-                        src={entry.photoUrl || PLACEHOLDER_IMAGE_DATA_URL} 
-                        alt={`Inspection for ${entry.unitId}`} 
-                        width={100} 
-                        height={75} 
-                        className="rounded-md object-cover" 
-                        data-ai-hint={entry.dataAiHint}
-                        onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
-                    />
-                  </TableCell>
-                </TableRow>
-              )) : (
-                <TableRow>
-                  <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
-                    No inspection records found matching your filters.
-                  </TableCell>
-                </TableRow>
-              )}
-            </TableBody>
-          </Table>
+          <Accordion type="multiple" className="w-full">
+            {filteredData.length > 0 ? filteredData.map((report) => (
+              <AccordionItem value={report.id} key={report.id}>
+                <AccordionTrigger className="hover:bg-muted/50 w-full">
+                  <Table className="w-full pointer-events-none"> {/* Make table non-interactive for trigger */}
+                    <TableHeader className="sr-only"> {/* Hide headers for trigger row, main headers are outside */}
+                      <TableRow>
+                        <TableHead>Unit ID</TableHead>
+                        <TableHead>Date</TableHead>
+                        <TableHead>Operator</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead>Photo</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      <TableRow className="border-b-0">
+                        <TableCell className="font-medium w-1/5">{report.unitId}</TableCell>
+                        <TableCell className="w-1/4">{report.date}</TableCell>
+                        <TableCell className="w-1/5">{report.operator}</TableCell>
+                        <TableCell className="w-1/6">
+                          <Badge variant={report.status === 'Safe' ? 'default' : 'destructive'} 
+                                 className={report.status === 'Safe' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-500'}>
+                            {report.status}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="w-1/6">
+                          <Image 
+                              src={report.representativePhotoUrl || PLACEHOLDER_IMAGE_DATA_URL} 
+                              alt={`Inspection for ${report.unitId}`} 
+                              width={80} 
+                              height={60} 
+                              className="rounded-md object-cover" 
+                              data-ai-hint={report.representativeDataAiHint}
+                              onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
+                          />
+                        </TableCell>
+                      </TableRow>
+                    </TableBody>
+                  </Table>
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="p-4 bg-secondary/30">
+                    <h4 className="text-lg font-semibold mb-2">Inspection Items for Unit {report.unitId}:</h4>
+                    {report.items && report.items.length > 0 ? (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Item</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Timestamp</TableHead>
+                            <TableHead>Photo</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {report.items.map((item) => (
+                            <TableRow key={item.checklistItemId}>
+                              <TableCell>{item.part_name}</TableCell>
+                              <TableCell>
+                                {item.is_safe === null ? <span className="text-muted-foreground">Pending</span> : 
+                                 item.is_safe ? 
+                                  <span className="flex items-center text-green-600"><CheckCircle className="mr-1 h-4 w-4"/>Safe</span> : 
+                                  <span className="flex items-center text-red-600"><AlertCircle className="mr-1 h-4 w-4"/>Unsafe</span>
+                                }
+                              </TableCell>
+                              <TableCell>{item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : 'N/A'}</TableCell>
+                              <TableCell>
+                                {item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL ? (
+                                  <Image 
+                                    src={item.photo_url} 
+                                    alt={item.part_name} 
+                                    width={60} 
+                                    height={45} 
+                                    className="rounded-md object-cover"
+                                    data-ai-hint={item.part_name.toLowerCase()}
+                                    onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
+                                  />
+                                ) : (
+                                  <div className="flex items-center text-muted-foreground">
+                                    <ImageOff className="mr-1 h-4 w-4"/> No Photo
+                                  </div>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    ) : (
+                      <p className="text-muted-foreground">No inspection items recorded for this report.</p>
+                    )}
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            )) : (
+              <AccordionItem value="no-data" disabled>
+                 <TableRow>
+                    <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
+                        No inspection records found matching your filters.
+                    </TableCell>
+                  </TableRow>
+              </AccordionItem>
+            )}
+          </Accordion>
+          {/* Fallback for when filteredData is empty but accordion needs a child, or if map is empty */}
+           {filteredData.length === 0 && (
+             <Table><TableBody><TableRow><TableCell colSpan={5} className="text-center py-10 text-muted-foreground">No inspection records found matching your filters.</TableCell></TableRow></TableBody></Table>
+           )}
         </CardContent>
       </Card>
     </div>
   );
 }
+
+    
