@@ -4,7 +4,7 @@
 import type { ReactNode } from 'react';
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useToast } from '@/hooks/use-toast'; // Import useToast
+import { useToast } from '@/hooks/use-toast';
 
 interface User {
   username: string;
@@ -14,7 +14,7 @@ interface User {
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (username: string, role?: 'operator' | 'supervisor') => Promise<void>;
+  login: (username: string, role: 'operator' | 'supervisor') => Promise<void>; // Role is now mandatory from LoginForm
   logout: () => void;
 }
 
@@ -24,7 +24,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
-  const { toast } = useToast(); // Initialize useToast
+  const { toast } = useToast();
 
   useEffect(() => {
     setLoading(true);
@@ -32,80 +32,71 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (storedUser) {
       try {
         const parsedUser = JSON.parse(storedUser);
-        // Basic validation of the stored user object
         if (parsedUser && typeof parsedUser.username === 'string' && 
             (parsedUser.role === 'operator' || parsedUser.role === 'supervisor')) {
           setUser(parsedUser);
         } else {
-          localStorage.removeItem('forkliftUser'); // Clear invalid stored user
+          localStorage.removeItem('forkliftUser');
         }
       } catch (error) {
         console.error("Failed to parse stored user:", error);
-        localStorage.removeItem('forkliftUser'); // Clear corrupted data
+        localStorage.removeItem('forkliftUser');
       }
     }
     setLoading(false);
   }, []);
 
-  const login = async (username: string, role: 'operator' | 'supervisor' = 'operator') => {
+  // This login function is called *after* LoginForm.tsx successfully authenticates with the PHP backend
+  const login = async (username: string, role: 'operator' | 'supervisor') => {
     setLoading(true);
-    // This function is called after LoginForm has validated credentials (currently mock validation)
-    // The primary action here is setting user state and then performing a health check.
-    
     const newUser = { username, role };
     setUser(newUser);
     localStorage.setItem('forkliftUser', JSON.stringify(newUser));
 
+    // Post-login health check (optional, but good to keep)
     try {
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
       if (!apiBaseUrl) {
         console.warn("API base URL (NEXT_PUBLIC_API_BASE_URL) is not configured. Skipping backend health check.");
         toast({
-          title: "Login Successful",
+          title: "Login Confirmed",
           description: `Welcome, ${username}! Backend health check skipped (API URL not configured).`,
           duration: 7000,
         });
       } else {
-        // Attempt a lightweight API call to check backend/DB connectivity
-        // We use inspection_reports.php as an example endpoint.
-        // A dedicated /health or /ping endpoint on PHP side would be ideal.
-        const healthCheckResponse = await fetch(`${apiBaseUrl}/inspection_reports.php?limit=1`); // Assuming PHP can ignore limit if not implemented
+        const healthCheckEndpoint = `${apiBaseUrl}/inspection_reports.php`; // Or a dedicated health check like /check_database.php
+        const healthCheckResponse = await fetch(`${healthCheckEndpoint}?limit=1`);
 
         if (healthCheckResponse.ok) {
           try {
-            // Try to parse to ensure backend is returning something sensible (e.g. JSON for this endpoint)
-            // We don't necessarily need the data itself for the health check.
             await healthCheckResponse.json(); 
             toast({
-              title: "Login Successful!",
+              title: "Login Confirmed!",
               description: `Welcome, ${username}! Backend services & database connection confirmed.`,
               variant: "default",
             });
           } catch (jsonError) {
-            // Response was OK (2xx) but not valid JSON as expected from this endpoint
              toast({
-              title: "Login Successful, but Backend Anomaly",
-              description: `Welcome, ${username}! Backend responded but not with expected data format. Check backend logs.`,
+              title: "Login Confirmed, Backend Anomaly",
+              description: `Welcome, ${username}! Backend responded but not with expected data format for health check.`,
               variant: "destructive", 
               duration: 9000,
             });
           }
         } else {
-          // Backend check failed (non-2xx response)
           let errorMessage = `Backend service check failed with status: ${healthCheckResponse.status}.`;
           try {
-            const errorData = await healthCheckResponse.json();
-            errorMessage = `Backend Error: ${errorData.message || JSON.stringify(errorData)}`;
-          } catch (e) {
-            try {
-              const textError = await healthCheckResponse.text();
-              if (textError) {
-                errorMessage = `Backend returned non-JSON error: ${textError.substring(0, 150)}...`;
-              }
-            } catch (textE) { /* Fallback to original status message */ }
-          }
+            const errorText = await healthCheckResponse.text();
+            const errorJsonMatch = errorText.match(/{.*}/s); // Try to extract JSON if embedded
+            if (errorJsonMatch && errorJsonMatch[0]) {
+                const errorData = JSON.parse(errorJsonMatch[0]);
+                errorMessage = `Backend Error: ${errorData.message || JSON.stringify(errorData)}`;
+            } else if (errorText) {
+                errorMessage = `Backend returned non-JSON error: ${errorText.substring(0, 150)}...`;
+            }
+          } catch (e) { /* Fallback to original status message */ }
           toast({
-            title: "Login Successful, but Service Issue",
+            title: "Login Confirmed, Service Issue",
             description: `Welcome, ${username}! ${errorMessage}`,
             variant: "destructive",
             duration: 9000,
@@ -113,9 +104,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
       }
     } catch (error) {
-      // Catch errors from the fetch call itself (e.g., network error)
       toast({
-        title: "Login Successful, but Connectivity Issue",
+        title: "Login Confirmed, Connectivity Issue",
         description: `Welcome, ${username}! Could not connect to backend services for health check: ${(error instanceof Error ? error.message : String(error)).substring(0,150)}...`,
         variant: "destructive",
         duration: 9000,
@@ -130,6 +120,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     localStorage.removeItem('forkliftUser');
     router.push('/login');
+    // Optionally, you could call a /logout.php endpoint on your backend here
+    // to invalidate server-side sessions if you implement them.
+    toast({ title: "Logged Out", description: "You have been successfully logged out."});
   };
 
   return (

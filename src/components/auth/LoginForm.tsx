@@ -30,21 +30,44 @@ export default function LoginForm() {
       return;
     }
     setIsSubmitting(true);
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+
     try {
-      // Simulate API call for login or direct credential check
-      // In a real app, you'd ideally call a backend API endpoint for login.
-      // For now, we use a mock login that always succeeds for 'operator' and 'supervisor'.
-      // The actual user state update and backend health check will be handled by context's login.
-      if ((username === 'operator' && password === 'password') || (username === 'supervisor' && password === 'password')) {
-        // Pass the role to the context's login function
-        const role = username as 'operator' | 'supervisor';
-        await login(username, role); 
-        // The success toast (including DB check) is now handled by the AuthContext's login method.
+      const response = await fetch(`${apiBaseUrl}/login.php`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password }),
+      });
+
+      const contentType = response.headers.get("content-type");
+      let responseData;
+
+      if (contentType && contentType.includes("application/json")) {
+        responseData = await response.json();
       } else {
-        throw new Error('Invalid credentials');
+        const textResponse = await response.text();
+        throw new Error(`Server returned non-JSON response: ${textResponse.substring(0,100)}...`);
+      }
+
+      if (!response.ok) {
+        throw new Error(responseData.message || `Login failed. Status: ${response.status}`);
+      }
+
+      if (responseData.success && responseData.user && responseData.user.username && responseData.user.role) {
+        // Role validation to ensure it's one of the expected types
+        const userRole = responseData.user.role.toLowerCase();
+        if (userRole === 'operator' || userRole === 'supervisor') {
+          await login(responseData.user.username, userRole as 'operator' | 'supervisor');
+          // Success toast is now handled by AuthContext after health check
+        } else {
+          throw new Error(`Invalid user role received from server: ${responseData.user.role}`);
+        }
+      } else {
+        throw new Error(responseData.message || 'Login failed. Invalid response from server.');
       }
     } catch (error) {
-      // This catch block will handle 'Invalid credentials' or any error thrown by context.login (if it were to throw)
       toast({
         title: "Login Failed",
         description: (error instanceof Error) ? error.message : "An unknown error occurred.",
@@ -72,7 +95,7 @@ export default function LoginForm() {
               <Input
                 id="username"
                 type="text"
-                placeholder="e.g. operator / supervisor"
+                placeholder="Enter your username"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
@@ -85,7 +108,7 @@ export default function LoginForm() {
                 <Input
                   id="password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="e.g. password"
+                  placeholder="Enter your password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required

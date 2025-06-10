@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -5,10 +6,10 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Truck, UserPlus, Eye, EyeOff } from 'lucide-react';
+import { UserPlus, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation'; // Import useRouter
+import { useRouter } from 'next/navigation';
 
 export default function SignupForm() {
   const [username, setUsername] = useState('');
@@ -18,7 +19,7 @@ export default function SignupForm() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
-  const router = useRouter(); // Initialize router
+  const router = useRouter();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,17 +41,41 @@ export default function SignupForm() {
     }
 
     setIsSubmitting(true);
-    // Mock API call for signup
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+
     try {
-      // In a real app, you'd call your backend API to register the user
-      await new Promise(resolve => setTimeout(resolve, 1000)); 
-      console.log("Mock signup for:", { username, password });
-      
-      toast({
-        title: "Sign Up Successful",
-        description: "Your account has been created. Please log in.",
+      const response = await fetch(`${apiBaseUrl}/signup.php`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ username, password, role: 'operator' }), // Assuming default role 'operator', PHP might override or use its own default
       });
-      router.push('/login'); // Redirect to login page after successful signup
+
+      const contentType = response.headers.get("content-type");
+      let responseData;
+
+      if (contentType && contentType.includes("application/json")) {
+        responseData = await response.json();
+      } else {
+        const textResponse = await response.text();
+        throw new Error(`Server returned non-JSON response: ${textResponse.substring(0,100)}...`);
+      }
+
+      if (!response.ok) {
+        throw new Error(responseData.message || `HTTP error! status: ${response.status}`);
+      }
+      
+      if (responseData.success) {
+        toast({
+          title: "Sign Up Successful",
+          description: responseData.message || "Your account has been created. Please log in.",
+        });
+        router.push('/login');
+      } else {
+        throw new Error(responseData.message || "An unknown error occurred during signup.");
+      }
+
     } catch (error) {
       toast({
         title: "Sign Up Failed",
