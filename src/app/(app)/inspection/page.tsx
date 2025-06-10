@@ -24,10 +24,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { v4 as uuidv4 } from 'uuid';
-
-const LOCAL_STORAGE_REPORTS_KEY = 'forkliftInspectionReports';
-const LOCAL_STORAGE_DOWNTIME_KEY = 'forkliftDowntimeLogs';
+// We won't use client-side uuid v4 anymore if backend generates IDs.
+// import { v4 as uuidv4 } from 'uuid';
 
 export default function InspectionPage() {
   const [unitId, setUnitId] = useState('');
@@ -56,7 +54,7 @@ export default function InspectionPage() {
       photo_url: null,
       timestamp: null,
       completed: false,
-      remarks: null, // Initialize remarks
+      remarks: null,
     }));
     setInspectionItems(initialItems);
     setCurrentItemIdToInspect(initialItems.length > 0 ? initialItems[0].checklistItemId : null);
@@ -119,7 +117,7 @@ export default function InspectionPage() {
         if (stillPendingItems.length > 0) {
             setCurrentItemIdToInspect(stillPendingItems[0].checklistItemId);
         } else {
-            setCurrentItemIdToInspect(null); // All items are completed
+            setCurrentItemIdToInspect(null); 
         }
         return updatedItems;
     });
@@ -130,35 +128,58 @@ export default function InspectionPage() {
     !inspectionItems.find(iItem => iItem.checklistItemId === mItem.id)?.completed
   );
 
-  const handleSubmitReport = () => {
+  const handleSubmitReport = async () => {
     if (!isInspectionComplete || !user) return;
     setIsSubmittingReport(true);
 
     const overallStatus = hasUnsafeItems ? 'Unsafe' : 'Safe';
     const reportDate = new Date().toISOString();
-    const newReport: StoredInspectionReport = {
-      id: uuidv4(),
+    
+    // Prepare report data, excluding client-side 'completed' and potentially other fields not in DB schema for items
+    const reportItemsForAPI = inspectionItems.map(item => ({
+      checklistItemId: item.checklistItemId,
+      part_name: item.part_name,
+      question: item.question,
+      is_safe: item.is_safe,
+      photo_url: item.photo_url,
+      timestamp: item.timestamp,
+      remarks: item.remarks,
+    }));
+
+
+    const newReportAPIData: Omit<StoredInspectionReport, 'id'> = { // Assuming backend generates 'id' for the report
       unitId: unitId,
       date: reportDate,
       operator: user.username,
       status: overallStatus,
-      items: [...inspectionItems], 
+      items: reportItemsForAPI, 
     };
 
     try {
-      const existingReportsRaw = localStorage.getItem(LOCAL_STORAGE_REPORTS_KEY);
-      const existingReports: StoredInspectionReport[] = existingReportsRaw ? JSON.parse(existingReportsRaw) : [];
-      existingReports.push(newReport);
-      localStorage.setItem(LOCAL_STORAGE_REPORTS_KEY, JSON.stringify(existingReports));
-      
-      toast({
-        title: "Report Submitted",
-        description: `Inspection report for Unit ID ${unitId} has been saved.`,
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+      const response = await fetch(`${apiBaseUrl}/inspection_reports.php`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(newReportAPIData),
       });
 
-      if (newReport.status === 'Unsafe') {
-        const firstUnsafeItem = newReport.items.find(item => !item.is_safe);
-        let downtimeReason = `Forklift unit ${unitId} deemed unsafe during inspection.`;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to submit report to server.'}));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
+      
+      const savedReport: StoredInspectionReport = await response.json(); // Assuming backend returns the saved report with an ID
+
+      toast({
+        title: "Report Submitted",
+        description: `Inspection report for Unit ID ${savedReport.unitId} has been saved to the server.`,
+      });
+
+      if (savedReport.status === 'Unsafe') {
+        const firstUnsafeItem = savedReport.items.find(item => !item.is_safe);
+        let downtimeReason = `Forklift unit ${savedReport.unitId} deemed unsafe during inspection.`;
         if (firstUnsafeItem) {
           downtimeReason = `Unsafe item: ${firstUnsafeItem.part_name}.`;
           if (firstUnsafeItem.remarks) {
@@ -166,38 +187,41 @@ export default function InspectionPage() {
           }
         }
 
-        const newDowntimeLog: StoredDowntimeLog = {
-          id: uuidv4(),
-          unitId: newReport.unitId,
+        const newDowntimeLogAPIData: Omit<StoredDowntimeLog, 'id' | 'endTime'> = { // Backend generates ID, endTime is null initially
+          unitId: savedReport.unitId,
           reason: downtimeReason,
-          startTime: reportDate, // Use inspection submission time as start time
-          endTime: null,
-          loggedAt: reportDate, // Use inspection submission time as loggedAt time
+          startTime: reportDate, 
+          loggedAt: reportDate, 
         };
-
-        const existingDowntimeLogsRaw = localStorage.getItem(LOCAL_STORAGE_DOWNTIME_KEY);
-        const existingDowntimeLogs: StoredDowntimeLog[] = existingDowntimeLogsRaw ? JSON.parse(existingDowntimeLogsRaw) : [];
-        existingDowntimeLogs.push(newDowntimeLog);
-        localStorage.setItem(LOCAL_STORAGE_DOWNTIME_KEY, JSON.stringify(existingDowntimeLogs));
         
-        toast({
-          title: "Downtime Logged",
-          description: `Downtime automatically logged for unsafe unit ${newReport.unitId}.`,
-          variant: "default" 
+        const downtimeResponse = await fetch(`${apiBaseUrl}/downtime_logs.php`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json'},
+            body: JSON.stringify(newDowntimeLogAPIData)
         });
+
+        if(downtimeResponse.ok) {
+            toast({
+                title: "Downtime Logged",
+                description: `Downtime automatically logged for unsafe unit ${savedReport.unitId} on the server.`,
+                variant: "default" 
+            });
+        } else {
+            const downtimeError = await downtimeResponse.json().catch(() => ({ message: 'Failed to log downtime.'}));
+            toast({title: "Downtime Log Error", description: downtimeError.message || "Failed to automatically log downtime.", variant: "destructive"})
+        }
       }
+      resetInspectionState(true); // Reset for a new inspection
       
     } catch (error) {
-      console.error("Error saving report or downtime log to localStorage:", error);
+      console.error("Error submitting report to server:", error);
       toast({
         title: "Submission Error",
-        description: "Could not save data locally. Check console for details.",
+        description: (error instanceof Error) ? error.message : "Could not save data to the server.",
         variant: "destructive",
       });
     } finally {
       setIsSubmittingReport(false);
-      // resetInspectionState(true); // To reset everything including unit ID for a completely new inspection
-      // Consider not resetting unitId if user might want to inspect same unit again or start a new different one.
     }
   };
 

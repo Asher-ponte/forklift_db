@@ -6,9 +6,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileText, Download, Filter, CalendarDays, RefreshCw, CheckCircle, AlertCircle, ImageOff, MessageSquare } from "lucide-react";
+import { FileText, Download, Filter, RefreshCw, CheckCircle, AlertCircle, ImageOff, MessageSquare } from "lucide-react";
 import Image from 'next/image';
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import type { StoredInspectionReport } from '@/lib/types';
 import type { InspectionRecordClientState } from '@/lib/mock-data';
 import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
@@ -19,25 +19,17 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion"
 import { cn } from "@/lib/utils";
+import { useToast } from "@/hooks/use-toast"; // Import useToast
 
-const LOCAL_STORAGE_REPORTS_KEY = 'forkliftInspectionReports';
-
-// Mock data for the report (can be kept as a fallback or initial data)
-const mockReportData = [
-  { id: 'mock_insp001', unitId: 'FL001', date: '2024-07-15T10:00:00Z', operator: 'John Doe', status: 'Safe' as 'Safe' | 'Unsafe', photoUrl: 'https://placehold.co/100x75.png', dataAiHint: "forklift", items: [] },
-  { id: 'mock_insp002', unitId: 'FL002', date: '2024-07-15T11:00:00Z', operator: 'Jane Smith', status: 'Unsafe' as 'Safe' | 'Unsafe', photoUrl: 'https://placehold.co/100x75.png', dataAiHint: "forklift tire", items: [] },
-];
-
-// Type for display in the table, derived from StoredInspectionReport
 interface ReportDisplayEntry {
   id: string;
   unitId: string;
-  date: string; // Keep as string for direct display after formatting
+  date: string; 
   operator: string;
   status: 'Safe' | 'Unsafe';
-  representativePhotoUrl: string; // Photo for the summary row
-  representativeDataAiHint: string; // Hint for the summary row photo
-  rawDate: Date; // For sorting
+  representativePhotoUrl: string; 
+  representativeDataAiHint: string;
+  rawDate: Date; 
   items: InspectionRecordClientState[];
 }
 
@@ -45,105 +37,158 @@ export default function ReportPage() {
   const [allReports, setAllReports] = useState<ReportDisplayEntry[]>([]);
   const [filterUnitId, setFilterUnitId] = useState('');
   const [filterDateRange, setFilterDateRange] = useState<{ from: string, to: string }>({ from: '', to: '' });
+  const [isLoading, setIsLoading] = useState(true);
+  const { toast } = useToast(); // Initialize toast
 
-  const loadReports = () => {
-    const storedReportsRaw = localStorage.getItem(LOCAL_STORAGE_REPORTS_KEY);
-    const storedReports: StoredInspectionReport[] = storedReportsRaw ? JSON.parse(storedReportsRaw) : [];
-
-    const combinedReports: ReportDisplayEntry[] = [
-      ...mockReportData.map(mock => ({
-        ...mock,
-        representativePhotoUrl: mock.photoUrl || PLACEHOLDER_IMAGE_DATA_URL,
-        representativeDataAiHint: mock.dataAiHint || 'forklift',
-        rawDate: new Date(mock.date),
-        items: mock.items.length > 0 ? mock.items : [ 
-            { checklistItemId: 'mock-item', part_name: 'Mock Part', question: 'Is it okay?', is_safe: true, photo_url: mock.photoUrl, timestamp: new Date().toISOString(), completed: true, remarks: 'Mock remarks' }
-        ],
-      })),
-      ...storedReports.map(report => {
-        let representativePhoto = PLACEHOLDER_IMAGE_DATA_URL;
-        let hint = 'forklift general';
-        if (report.status === 'Unsafe') {
-          const unsafeItemWithPhoto = report.items.find(item => !item.is_safe && item.photo_url);
-          if (unsafeItemWithPhoto) {
-            representativePhoto = unsafeItemWithPhoto.photo_url!;
-            hint = unsafeItemWithPhoto.part_name;
-          } else {
-             const firstItemWithPhoto = report.items.find(item => item.photo_url);
-             if(firstItemWithPhoto) representativePhoto = firstItemWithPhoto.photo_url!;
-             hint = "issue";
-          }
+  const processApiReportsToDisplayEntries = (reportsFromApi: StoredInspectionReport[]): ReportDisplayEntry[] => {
+    return reportsFromApi.map(report => {
+      let representativePhoto = PLACEHOLDER_IMAGE_DATA_URL;
+      let hint = 'forklift general';
+      if (report.status === 'Unsafe') {
+        const unsafeItemWithPhoto = report.items?.find(item => !item.is_safe && item.photo_url);
+        if (unsafeItemWithPhoto) {
+          representativePhoto = unsafeItemWithPhoto.photo_url!;
+          hint = unsafeItemWithPhoto.part_name;
         } else {
-          const firstItemWithPhoto = report.items.find(item => item.photo_url);
-          if(firstItemWithPhoto) {
-            representativePhoto = firstItemWithPhoto.photo_url!;
-            hint = firstItemWithPhoto.part_name;
-          }
+           const firstItemWithPhoto = report.items?.find(item => item.photo_url);
+           if(firstItemWithPhoto) representativePhoto = firstItemWithPhoto.photo_url!;
+           hint = "issue";
         }
-        return {
-          id: report.id,
-          unitId: report.unitId,
-          date: new Date(report.date).toLocaleString(),
-          operator: report.operator,
-          status: report.status,
-          representativePhotoUrl: representativePhoto,
-          representativeDataAiHint: hint.substring(0,50),
-          rawDate: new Date(report.date),
-          items: report.items,
-        };
-      })
-    ];
-
-    const uniqueReportsMap = new Map<string, ReportDisplayEntry>();
-    combinedReports.forEach(item => {
-        if (!uniqueReportsMap.has(item.id) || (uniqueReportsMap.get(item.id)?.items.some(i => i.checklistItemId === 'mock-item') && item.items.length > 0 && !item.items.some(i=> i.checklistItemId === 'mock-item'))) {
-           uniqueReportsMap.set(item.id, item);
+      } else {
+        const firstItemWithPhoto = report.items?.find(item => item.photo_url);
+        if(firstItemWithPhoto) {
+          representativePhoto = firstItemWithPhoto.photo_url!;
+          hint = firstItemWithPhoto.part_name;
         }
-    });
-    const uniqueReports = Array.from(uniqueReportsMap.values());
-    uniqueReports.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
-
-    setAllReports(uniqueReports);
+      }
+      return {
+        id: report.id,
+        unitId: report.unitId,
+        date: new Date(report.date).toLocaleString(),
+        operator: report.operator,
+        status: report.status,
+        representativePhotoUrl: representativePhoto,
+        representativeDataAiHint: hint.substring(0,50),
+        rawDate: new Date(report.date),
+        items: report.items || [], // Ensure items is an array
+      };
+    }).sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
   };
-
-  useEffect(() => {
-    loadReports();
-  }, []);
-
-  const filteredData = useMemo(() => {
-    return allReports.filter(entry => {
-      const unitFilterMatch = filterUnitId ? entry.unitId.toLowerCase().includes(filterUnitId.toLowerCase()) : true;
-
-      let dateFilterMatch = true;
-      const entryDate = entry.rawDate;
-      if (filterDateRange.from && filterDateRange.to) {
-        const fromDate = new Date(filterDateRange.from);
+  
+  const loadReportsFromAPI = useCallback(async () => {
+    setIsLoading(true);
+    try {
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+      // Construct query parameters for filtering if they exist
+      const queryParams = new URLSearchParams();
+      if (filterUnitId) queryParams.append('unitId', filterUnitId);
+      if (filterDateRange.from) queryParams.append('dateFrom', new Date(filterDateRange.from).toISOString());
+      if (filterDateRange.to) {
         const toDate = new Date(filterDateRange.to);
         toDate.setHours(23, 59, 59, 999); // Ensure "to" date includes the whole day
-        dateFilterMatch = entryDate >= fromDate && entryDate <= toDate;
-      } else if (filterDateRange.from) {
-        const fromDate = new Date(filterDateRange.from);
-        dateFilterMatch = entryDate >= fromDate;
-      } else if (filterDateRange.to) {
-        const toDate = new Date(filterDateRange.to);
-        toDate.setHours(23, 59, 59, 999); // Ensure "to" date includes the whole day
-        dateFilterMatch = entryDate <= toDate;
+        queryParams.append('dateTo', toDate.toISOString());
+      }
+      
+      const response = await fetch(`${apiBaseUrl}/inspection_reports.php?${queryParams.toString()}`);
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: 'Failed to fetch reports from server.'}));
+        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      }
+      const reportsFromAPI: StoredInspectionReport[] = await response.json();
+      
+      if (!Array.isArray(reportsFromAPI)) {
+        console.error("API did not return an array for reports:", reportsFromAPI);
+        throw new Error("Invalid data format received from server.");
       }
 
-      return unitFilterMatch && dateFilterMatch;
-    });
-  }, [allReports, filterUnitId, filterDateRange]);
+      setAllReports(processApiReportsToDisplayEntries(reportsFromAPI));
+      
+    } catch (error) {
+      console.error("Failed to fetch reports:", error);
+      toast({ title: "Error Loading Reports", description: (error instanceof Error) ? error.message : "Could not fetch reports.", variant: "destructive" });
+      setAllReports([]); 
+    } finally {
+      setIsLoading(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [toast]); // Removed filters from dependencies, manual refresh/filter application will call this
+
+
+  useEffect(() => {
+    loadReportsFromAPI();
+  }, [loadReportsFromAPI]);
+
+  const handleFilterAndRefresh = () => {
+    // This function will be called by the refresh button
+    // It will use the current filter states to fetch data
+    // To make it effective, we would need to pass filterUnitId and filterDateRange
+    // to loadReportsFromAPI or make loadReportsFromAPI directly use these state variables.
+    // For simplicity now, the loadReportsFromAPI is designed to be called on mount and manual refresh.
+    // We need loadReportsFromAPI to re-evaluate filters when called.
+    // Let's adjust loadReportsFromAPI to take filters or make useEffect depend on them.
+    // For now, just calling it will use the latest state values if it's defined outside useEffect scope or passed.
+    // Making loadReportsFromAPI depend on filters directly in its definition and useEffect.
+    setIsLoading(true);
+    const fetchWithFilters = async () => {
+        try {
+            const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+            const queryParams = new URLSearchParams();
+            if (filterUnitId) queryParams.append('unitId', filterUnitId);
+            if (filterDateRange.from) queryParams.append('dateFrom', new Date(filterDateRange.from).toISOString());
+            if (filterDateRange.to) {
+                const toDate = new Date(filterDateRange.to);
+                toDate.setHours(23, 59, 59, 999);
+                queryParams.append('dateTo', toDate.toISOString());
+            }
+            
+            const response = await fetch(`${apiBaseUrl}/inspection_reports.php?${queryParams.toString()}`);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({ message: 'Failed to fetch reports.' }));
+                throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+            }
+            const reportsFromAPI: StoredInspectionReport[] = await response.json();
+            if (!Array.isArray(reportsFromAPI)) {
+                console.error("API did not return an array for reports:", reportsFromAPI);
+                throw new Error("Invalid data format received from server.");
+            }
+            setAllReports(processApiReportsToDisplayEntries(reportsFromAPI));
+        } catch (error) {
+            console.error("Failed to fetch reports with filters:", error);
+            toast({ title: "Error Filtering Reports", description: (error instanceof Error) ? error.message : "Could not apply filters.", variant: "destructive" });
+        } finally {
+            setIsLoading(false);
+        }
+    };
+    fetchWithFilters();
+  };
+
+
+  const filteredData = useMemo(() => {
+    // Client-side filtering is removed as filtering is now intended to be done by API
+    // However, if API doesn't support all filtering or for instant UI updates,
+    // client-side filtering can be re-added here based on `allReports`
+    return allReports; // Assuming API returns pre-filtered data based on query params
+                      // Or if API returns all, and we filter client-side:
+    // return allReports.filter(entry => {
+    //   const unitFilterMatch = filterUnitId ? entry.unitId.toLowerCase().includes(filterUnitId.toLowerCase()) : true;
+    //   let dateFilterMatch = true;
+    //   // ... (client-side date filtering logic if needed) ...
+    //   return unitFilterMatch && dateFilterMatch;
+    // });
+  }, [allReports]);
+
 
   const handleExportCsv = () => {
     const headers = ["Inspection ID", "Unit ID", "Date", "Operator", "Overall Status", "Checklist Item", "Item Status", "Item Timestamp", "Remarks", "Photo URL"];
     const csvRows: string[] = [headers.join(',')];
 
     filteredData.forEach(report => {
-      report.items.forEach(item => {
+      (report.items || []).forEach(item => {
         const row = [
           report.id,
           report.unitId,
-          report.date,
+          report.date, // This is already formatted: new Date(report.date).toLocaleString()
           report.operator,
           report.status,
           item.part_name,
@@ -154,7 +199,7 @@ export default function ReportPage() {
         ].map(field => `"${String(field).replace(/"/g, '""')}"`); 
         csvRows.push(row.join(','));
       });
-       if (report.items.length === 0) { 
+       if (!report.items || report.items.length === 0) { 
         const row = [
           report.id,
           report.unitId,
@@ -189,7 +234,7 @@ export default function ReportPage() {
             <FileText className="mr-3 h-8 w-8 text-primary" />
             Forklift Inspection Report
           </CardTitle>
-          <CardDescription>View and filter forklift inspection history. Click on a report to see item details. Submitted reports are stored locally in your browser.</CardDescription>
+          <CardDescription>View and filter forklift inspection history. Reports are fetched from the backend server.</CardDescription>
         </CardHeader>
       </Card>
 
@@ -236,8 +281,8 @@ export default function ReportPage() {
             <Button onClick={handleExportCsv} className="w-full sm:w-auto text-base">
               <Download className="mr-2 h-5 w-5" /> Export CSV
             </Button>
-            <Button onClick={loadReports} variant="outline" className="w-full sm:w-auto text-base">
-              <RefreshCw className="mr-2 h-5 w-5" /> Refresh Data
+            <Button onClick={handleFilterAndRefresh} variant="outline" className="w-full sm:w-auto text-base">
+              <RefreshCw className="mr-2 h-5 w-5" /> Apply Filters & Refresh
             </Button>
           </div>
         </CardContent>
@@ -253,6 +298,9 @@ export default function ReportPage() {
               <div className="w-[15%] text-center">Photo</div>
               <div className="w-[5%]"></div> {/* Spacer for chevron */}
             </div>
+          {isLoading ? (
+            <div className="text-center p-10 text-muted-foreground">Loading reports...</div>
+          ) : (
           <Accordion type="multiple" className="w-full">
             {filteredData.map((report) => (
               <AccordionItem value={report.id} key={report.id} className="border-b last:border-b-0">
@@ -309,8 +357,8 @@ export default function ReportPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {report.items.map((item) => (
-                              <TableRow key={item.checklistItemId}>
+                            {report.items.map((item, idx) => ( // Added idx for key if checklistItemId is not unique enough across reports
+                              <TableRow key={`${report.id}-item-${item.checklistItemId}-${idx}`}>
                                 <TableCell className="font-medium">{item.part_name}</TableCell>
                                 <TableCell>
                                   {item.is_safe === null ? <span className="text-muted-foreground">Pending</span> :
@@ -331,7 +379,7 @@ export default function ReportPage() {
                                   )}
                                 </TableCell>
                                 <TableCell className="text-center">
-                                  {item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL ? (
+                                  {item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL && !item.photo_url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP") ? ( // Check for actual photo
                                     <Image
                                       src={item.photo_url}
                                       alt={item.part_name}
@@ -360,13 +408,14 @@ export default function ReportPage() {
               </AccordionItem>
             ))}
           </Accordion>
-           {filteredData.length === 0 && (
+          )}
+           { !isLoading && filteredData.length === 0 && (
              <div className="relative w-full overflow-auto">
                 <table className="w-full caption-bottom text-sm">
                   <tbody className="[&_tr:last-child]:border-0">
                     <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
                       <td colSpan={5} className="p-4 align-middle text-center py-10 text-muted-foreground">
-                        No inspection records found matching your filters.
+                        No inspection records found.
                       </td>
                     </tr>
                   </tbody>
