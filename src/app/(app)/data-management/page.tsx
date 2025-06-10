@@ -113,19 +113,47 @@ export default function DataManagementPage() {
     }
     setIsLoadingDepartments(true);
     try {
-      const response = await fetch(`${apiBaseUrl}/departments_api.php`);
+      const response = await fetch(`${apiBaseUrl}/departments_api.php?_cacheBust=${new Date().getTime()}`);
       console.log('Fetch Departments Response Status:', response.status);
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Fetch Departments Error Text:', errorText);
         throw new Error(`Failed to fetch departments: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
       }
-      const data = await response.json();
-      console.log('Fetched Departments Data:', JSON.stringify(data, null, 2));
-      setDepartments(Array.isArray(data) ? data : []);
+      
+      const responseData = await response.json();
+      let departmentsArray = [];
+
+      if (responseData && Array.isArray(responseData.data)) {
+        departmentsArray = responseData.data;
+      } else if (Array.isArray(responseData)) { // Fallback for direct array, though 'data' key is preferred
+        departmentsArray = responseData;
+      } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
+        // API returned an empty object {}, treat as no items
+        departmentsArray = [];
+      } else {
+        console.error('API returned an unexpected format for departments:', responseData);
+        toast({ title: "Data Format Error", description: "Unexpected data format received for departments from server.", variant: "destructive" });
+      }
+      console.log('Fetched Departments Data:', JSON.stringify(departmentsArray, null, 2));
+      setDepartments(departmentsArray);
+
     } catch (error) {
       console.error('Error in fetchDepartments:', error);
-      toast({ title: "Error Fetching Departments", description: (error instanceof Error) ? error.message : "Could not fetch departments. Check console for details.", variant: "destructive" });
+      let errorMessage = "Could not fetch departments. Check console for details.";
+      if (error instanceof Error) {
+        errorMessage = error.message;
+        if (!response.ok && !(error.message.includes("JSON at position") || error.message.includes("token '<'"))) { // Avoid double logging JSON parse error if already handled
+            const rawText = await response.text().catch(() => "Could not get raw error text.");
+            console.error("Raw server response (fetchDepartments):", rawText.substring(0, 500));
+             if (rawText.toLowerCase().includes("json")) {
+                 errorMessage = "Server returned non-JSON response. Check console and PHP logs.";
+            } else {
+                errorMessage = `Server error: ${response.status}. Response: ${rawText.substring(0,100)}...`;
+            }
+        }
+      }
+      toast({ title: "Error Fetching Departments", description: errorMessage, variant: "destructive" });
       setDepartments([]);
     } finally {
       setIsLoadingDepartments(false);
@@ -139,23 +167,52 @@ export default function DataManagementPage() {
     }
     setIsLoadingMheUnits(true);
     try {
-      const response = await fetch(`${apiBaseUrl}/mhe_units_api.php`);
+      const response = await fetch(`${apiBaseUrl}/mhe_units_api.php?_cacheBust=${new Date().getTime()}`);
       console.log('Fetch MHE Units Response Status:', response.status);
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Fetch MHE Units Error Text:', errorText);
         throw new Error(`Failed to fetch MHE units: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
       }
-      const data: MheUnit[] = await response.json();
-      console.log('Fetched MHE Units Data:', JSON.stringify(data, null, 2));
-      const enhancedData = Array.isArray(data) ? data.map(mhe => ({
+
+      const responseData = await response.json();
+      let mheUnitsArray = [];
+
+      if (responseData && Array.isArray(responseData.data)) {
+        mheUnitsArray = responseData.data;
+      } else if (Array.isArray(responseData)) {
+        mheUnitsArray = responseData;
+      } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
+        mheUnitsArray = [];
+      } else {
+        console.error('API returned an unexpected format for MHE units:', responseData);
+        toast({ title: "Data Format Error", description: "Unexpected data format received for MHE units from server.", variant: "destructive" });
+      }
+      console.log('Fetched MHE Units Data (raw):', JSON.stringify(mheUnitsArray, null, 2));
+      
+      const enhancedData = Array.isArray(mheUnitsArray) ? mheUnitsArray.map(mhe => ({
         ...mhe,
         department_name: departments.find(d => d.id === mhe.department_id)?.name || 'N/A'
       })) : [];
+      console.log('Fetched MHE Units Data (enhanced):', JSON.stringify(enhancedData, null, 2));
       setMheUnits(enhancedData);
+
     } catch (error) {
       console.error('Error in fetchMheUnits:', error);
-      toast({ title: "Error Fetching MHE Units", description: (error instanceof Error) ? error.message : "Could not fetch MHE units. Check console for details.", variant: "destructive" });
+      let errorMessage = "Could not fetch MHE units. Check console for details.";
+       if (error instanceof Error) {
+        errorMessage = error.message;
+        if (!response.ok && !(error.message.includes("JSON at position") || error.message.includes("token '<'"))) { 
+            const rawText = await response.text().catch(() => "Could not get raw error text.");
+            console.error("Raw server response (fetchMheUnits):", rawText.substring(0, 500));
+            if (rawText.toLowerCase().includes("json")) {
+                 errorMessage = "Server returned non-JSON response. Check console and PHP logs.";
+            } else {
+                errorMessage = `Server error: ${response.status}. Response: ${rawText.substring(0,100)}...`;
+            }
+        }
+      }
+      toast({ title: "Error Fetching MHE Units", description: errorMessage, variant: "destructive" });
       setMheUnits([]);
     } finally {
       setIsLoadingMheUnits(false);
@@ -169,19 +226,46 @@ export default function DataManagementPage() {
     }
     setIsLoadingChecklistItems(true);
     try {
-      const response = await fetch(`${apiBaseUrl}/checklist_items_api.php`);
+      const response = await fetch(`${apiBaseUrl}/checklist_items_api.php?_cacheBust=${new Date().getTime()}`);
       console.log('Fetch Checklist Items Response Status:', response.status);
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Fetch Checklist Items Error Text:', errorText);
         throw new Error(`Failed to fetch checklist items: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
       }
-      const data = await response.json();
-      console.log('Fetched Checklist Items Data:', JSON.stringify(data, null, 2));
-      setChecklistItems(Array.isArray(data) ? data : []);
+      
+      const responseData = await response.json();
+      let checklistItemsArray = [];
+
+      if (responseData && Array.isArray(responseData.data)) {
+        checklistItemsArray = responseData.data;
+      } else if (Array.isArray(responseData)) {
+        checklistItemsArray = responseData;
+      } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
+        checklistItemsArray = [];
+      } else {
+        console.error('API returned an unexpected format for checklist items:', responseData);
+        toast({ title: "Data Format Error", description: "Unexpected data format received for checklist items from server.", variant: "destructive" });
+      }
+      console.log('Fetched Checklist Items Data:', JSON.stringify(checklistItemsArray, null, 2));
+      setChecklistItems(checklistItemsArray);
+
     } catch (error) {
       console.error('Error in fetchChecklistItems:', error);
-      toast({ title: "Error Fetching Checklist Items", description: (error instanceof Error) ? error.message : "Could not fetch checklist items. Check console for details.", variant: "destructive" });
+       let errorMessage = "Could not fetch checklist items. Check console for details.";
+       if (error instanceof Error) {
+        errorMessage = error.message;
+        if (!response.ok && !(error.message.includes("JSON at position") || error.message.includes("token '<'"))) { 
+            const rawText = await response.text().catch(() => "Could not get raw error text.");
+            console.error("Raw server response (fetchChecklistItems):", rawText.substring(0, 500));
+             if (rawText.toLowerCase().includes("json")) {
+                 errorMessage = "Server returned non-JSON response. Check console and PHP logs.";
+            } else {
+                errorMessage = `Server error: ${response.status}. Response: ${rawText.substring(0,100)}...`;
+            }
+        }
+      }
+      toast({ title: "Error Fetching Checklist Items", description: errorMessage, variant: "destructive" });
       setChecklistItems([]);
     } finally {
       setIsLoadingChecklistItems(false);
@@ -197,10 +281,14 @@ export default function DataManagementPage() {
   }, [user, fetchDepartments, fetchChecklistItems]);
   
   useEffect(() => {
-    if (user?.role === 'supervisor' && !isLoadingDepartments && departments.length >= 0) { // Fetch MHE even if departments list is empty initially
+    // Fetch MHE units only after departments have been loaded (or attempted)
+    // and if the user is a supervisor.
+    // departments.length >= 0 ensures it runs even if departments is empty,
+    // as long as the fetch attempt has completed (isLoadingDepartments is false).
+    if (user?.role === 'supervisor' && !isLoadingDepartments && departments.length >= 0) {
          fetchMheUnits();
     }
-  }, [user, fetchMheUnits, isLoadingDepartments, departments.length]);
+  }, [user, fetchMheUnits, isLoadingDepartments, departments]);
 
 
   // --- Form Submission Handlers ---
@@ -217,10 +305,17 @@ export default function DataManagementPage() {
             throw new Error("Failed to add department. The department name may already exist. Please use a unique name.");
         }
         try {
-          errorData = await response.json();
+          const textResponse = await response.text();
+          // Try to parse as JSON, but if it fails, use the text response.
+          try {
+            errorData = JSON.parse(textResponse);
+          } catch (e) {
+            throw new Error(textResponse ? `Server error: ${textResponse.substring(0,100)}...` : errorData.message);
+          }
         } catch (e) {
-          const textError = await response.text().catch(() => ''); 
-          throw new Error(textError ? `Server error: ${textError.substring(0,100)}...` : errorData.message);
+            // This catch is for if response.text() itself fails, or if JSON.parse above failed.
+            if (e instanceof Error) throw e; // Re-throw if it's already an error object
+            throw new Error(errorData.message); // Fallback to original message
         }
         throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
       }
@@ -250,10 +345,15 @@ export default function DataManagementPage() {
             throw new Error("Failed to add MHE unit. The Unit Code may already exist. Please use a unique code.");
           }
         try {
-          errorData = await response.json();
+          const textResponse = await response.text();
+          try {
+            errorData = JSON.parse(textResponse);
+          } catch (e) {
+            throw new Error(textResponse ? `Server error: ${textResponse.substring(0,100)}...` : errorData.message);
+          }
         } catch (e) {
-          const textError = await response.text().catch(() => '');
-          throw new Error(textError ? `Server error: ${textError.substring(0,100)}...` : errorData.message);
+           if (e instanceof Error) throw e;
+           throw new Error(errorData.message);
         }
         throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
       }
@@ -276,10 +376,15 @@ export default function DataManagementPage() {
       if (!response.ok) {
         let errorData = { message: `Request failed: ${response.status} ${response.statusText}` };
         try {
-          errorData = await response.json();
+          const textResponse = await response.text();
+          try {
+            errorData = JSON.parse(textResponse);
+          } catch (e) {
+            throw new Error(textResponse ? `Server error: ${textResponse.substring(0,100)}...` : errorData.message);
+          }
         } catch (e) {
-          const textError = await response.text().catch(() => '');
-          throw new Error(textError ? `Server error: ${textError.substring(0,100)}...` : errorData.message);
+          if (e instanceof Error) throw e;
+          throw new Error(errorData.message);
         }
         throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
       }
