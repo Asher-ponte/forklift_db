@@ -1,3 +1,4 @@
+
 'use client';
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -5,49 +6,116 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { FileText, Download, Filter, CalendarDays } from "lucide-react";
+import { FileText, Download, Filter, CalendarDays, RefreshCw } from "lucide-react";
 import Image from 'next/image';
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
+import type { StoredInspectionReport } from '@/lib/types';
+import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
 
-// Mock data for the report
+const LOCAL_STORAGE_REPORTS_KEY = 'forkliftInspectionReports';
+
+// Mock data for the report (can be kept as a fallback or initial data)
 const mockReportData = [
-  { id: 'insp001', unitId: 'FL001', date: '2024-07-15', operator: 'John Doe', status: 'Safe', photoUrl: 'https://placehold.co/100x75?text=Fork+View' , dataAiHint: "forklift"},
-  { id: 'insp002', unitId: 'FL002', date: '2024-07-15', operator: 'Jane Smith', status: 'Unsafe', photoUrl: 'https://placehold.co/100x75?text=Tire+Issue', dataAiHint: "forklift tire"},
-  { id: 'insp003', unitId: 'FL001', date: '2024-07-14', operator: 'John Doe', status: 'Safe', photoUrl: 'https://placehold.co/100x75?text=Lights+OK', dataAiHint: "forklift lights"},
-  { id: 'insp004', unitId: 'FL003', date: '2024-07-14', operator: 'Mike Brown', status: 'Safe', photoUrl: 'https://placehold.co/100x75?text=Brakes+Good', dataAiHint: "forklift brakes"},
-  { id: 'insp005', unitId: 'FL002', date: '2024-07-13', operator: 'Jane Smith', status: 'Safe', photoUrl: 'https://placehold.co/100x75?text=Fork+Fine', dataAiHint: "forklift"},
+  { id: 'mock_insp001', unitId: 'FL001', date: '2024-07-15T10:00:00Z', operator: 'John Doe', status: 'Safe' as 'Safe' | 'Unsafe', photoUrl: 'https://placehold.co/100x75?text=Fork+View' , dataAiHint: "forklift"},
+  { id: 'mock_insp002', unitId: 'FL002', date: '2024-07-15T11:00:00Z', operator: 'Jane Smith', status: 'Unsafe' as 'Safe' | 'Unsafe', photoUrl: 'https://placehold.co/100x75?text=Tire+Issue', dataAiHint: "forklift tire"},
 ];
 
-type ReportEntry = typeof mockReportData[0];
+// Type for display in the table, derived from StoredInspectionReport
+interface ReportDisplayEntry {
+  id: string;
+  unitId: string;
+  date: string; // Keep as string for direct display after formatting
+  operator: string;
+  status: 'Safe' | 'Unsafe';
+  photoUrl: string;
+  dataAiHint: string;
+  rawDate: Date; // For sorting
+}
 
 export default function ReportPage() {
+  const [allReports, setAllReports] = useState<ReportDisplayEntry[]>([]);
   const [filterUnitId, setFilterUnitId] = useState('');
   const [filterDateRange, setFilterDateRange] = useState<{ from: string, to: string }>({ from: '', to: '' });
 
+  const loadReports = () => {
+    const storedReportsRaw = localStorage.getItem(LOCAL_STORAGE_REPORTS_KEY);
+    const storedReports: StoredInspectionReport[] = storedReportsRaw ? JSON.parse(storedReportsRaw) : [];
+
+    const combinedReports: ReportDisplayEntry[] = [
+      ...mockReportData.map(mock => ({
+        ...mock,
+        photoUrl: mock.photoUrl || PLACEHOLDER_IMAGE_DATA_URL,
+        dataAiHint: mock.dataAiHint || 'forklift',
+        rawDate: new Date(mock.date),
+      })),
+      ...storedReports.map(report => {
+        let representativePhoto = PLACEHOLDER_IMAGE_DATA_URL;
+        let hint = 'forklift general';
+        if (report.status === 'Unsafe') {
+          const unsafeItemWithPhoto = report.items.find(item => !item.is_safe && item.photo_url);
+          if (unsafeItemWithPhoto) {
+            representativePhoto = unsafeItemWithPhoto.photo_url!;
+            hint = report.unitId + " " + unsafeItemWithPhoto.part_name;
+          } else {
+             const firstItemWithPhoto = report.items.find(item => item.photo_url);
+             if(firstItemWithPhoto) representativePhoto = firstItemWithPhoto.photo_url!;
+             hint = report.unitId + " issue";
+          }
+        } else {
+          const firstItemWithPhoto = report.items.find(item => item.photo_url);
+          if(firstItemWithPhoto) {
+            representativePhoto = firstItemWithPhoto.photo_url!;
+            hint = report.unitId + " " + firstItemWithPhoto.part_name;
+          }
+        }
+        return {
+          id: report.id,
+          unitId: report.unitId,
+          date: new Date(report.date).toLocaleString(),
+          operator: report.operator,
+          status: report.status,
+          photoUrl: representativePhoto,
+          dataAiHint: hint.substring(0,50), // Limit hint length
+          rawDate: new Date(report.date),
+        };
+      })
+    ];
+    
+    // Deduplicate and sort by date descending
+    const uniqueReports = Array.from(new Map(combinedReports.map(item => [item.id, item])).values());
+    uniqueReports.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
+    
+    setAllReports(uniqueReports);
+  };
+
+  useEffect(() => {
+    loadReports();
+  }, []);
+
   const filteredData = useMemo(() => {
-    return mockReportData.filter(entry => {
+    return allReports.filter(entry => {
       const unitFilterMatch = filterUnitId ? entry.unitId.toLowerCase().includes(filterUnitId.toLowerCase()) : true;
       
       let dateFilterMatch = true;
+      const entryDate = entry.rawDate; 
       if (filterDateRange.from && filterDateRange.to) {
-        const entryDate = new Date(entry.date);
         const fromDate = new Date(filterDateRange.from);
         const toDate = new Date(filterDateRange.to);
+        // Adjust toDate to be end of day for inclusive range
+        toDate.setHours(23, 59, 59, 999);
         dateFilterMatch = entryDate >= fromDate && entryDate <= toDate;
       } else if (filterDateRange.from) {
-        const entryDate = new Date(entry.date);
         const fromDate = new Date(filterDateRange.from);
         dateFilterMatch = entryDate >= fromDate;
       } else if (filterDateRange.to) {
-        const entryDate = new Date(entry.date);
         const toDate = new Date(filterDateRange.to);
+        toDate.setHours(23, 59, 59, 999);
         dateFilterMatch = entryDate <= toDate;
       }
       
       return unitFilterMatch && dateFilterMatch;
     });
-  }, [filterUnitId, filterDateRange]);
+  }, [allReports, filterUnitId, filterDateRange]);
 
   const handleExportCsv = () => {
     const headers = ["Inspection ID", "Unit ID", "Date", "Operator", "Status"];
@@ -61,7 +129,7 @@ export default function ReportPage() {
     if (link.download !== undefined) {
       const url = URL.createObjectURL(blob);
       link.setAttribute('href', url);
-      link.setAttribute('download', 'forklift_report.csv');
+      link.setAttribute('download', `forklift_report_${new Date().toISOString().split('T')[0]}.csv`);
       link.style.visibility = 'hidden';
       document.body.appendChild(link);
       link.click();
@@ -77,7 +145,7 @@ export default function ReportPage() {
             <FileText className="mr-3 h-8 w-8 text-primary" />
             Forklift Inspection Report
           </CardTitle>
-          <CardDescription>View and filter forklift inspection history. Export data as CSV.</CardDescription>
+          <CardDescription>View and filter forklift inspection history. Submitted reports are stored locally in your browser.</CardDescription>
         </CardHeader>
       </Card>
 
@@ -87,7 +155,7 @@ export default function ReportPage() {
             <Filter className="mr-2 h-5 w-5" /> Filters
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+        <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-end">
           <div>
             <label htmlFor="filterUnitId" className="block text-sm font-medium text-muted-foreground mb-1">Filter by Unit ID</label>
             <Input
@@ -120,9 +188,14 @@ export default function ReportPage() {
               />
             </div>
           </div>
-          <Button onClick={handleExportCsv} className="w-full md:w-auto text-base">
-            <Download className="mr-2 h-5 w-5" /> Export CSV
-          </Button>
+          <div className="flex flex-col sm:flex-row gap-2 md:col-span-1">
+            <Button onClick={handleExportCsv} className="w-full text-base">
+              <Download className="mr-2 h-5 w-5" /> Export CSV
+            </Button>
+            <Button onClick={loadReports} variant="outline" className="w-full text-base">
+              <RefreshCw className="mr-2 h-5 w-5" /> Refresh Data
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -142,7 +215,7 @@ export default function ReportPage() {
               {filteredData.length > 0 ? filteredData.map((entry) => (
                 <TableRow key={entry.id}>
                   <TableCell className="font-medium">{entry.unitId}</TableCell>
-                  <TableCell>{new Date(entry.date).toLocaleDateString()}</TableCell>
+                  <TableCell>{entry.date}</TableCell>
                   <TableCell>{entry.operator}</TableCell>
                   <TableCell>
                     <Badge variant={entry.status === 'Safe' ? 'default' : 'destructive'} 
@@ -151,7 +224,15 @@ export default function ReportPage() {
                     </Badge>
                   </TableCell>
                   <TableCell>
-                    <Image src={entry.photoUrl} alt={`Inspection for ${entry.unitId}`} width={100} height={75} className="rounded-md object-cover" data-ai-hint={entry.dataAiHint} />
+                    <Image 
+                        src={entry.photoUrl || PLACEHOLDER_IMAGE_DATA_URL} 
+                        alt={`Inspection for ${entry.unitId}`} 
+                        width={100} 
+                        height={75} 
+                        className="rounded-md object-cover" 
+                        data-ai-hint={entry.dataAiHint}
+                        onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
+                    />
                   </TableCell>
                 </TableRow>
               )) : (

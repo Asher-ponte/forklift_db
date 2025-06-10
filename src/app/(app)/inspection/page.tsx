@@ -3,14 +3,18 @@
 
 import { useState, useEffect, useMemo } from 'react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import CompletionProgress from '@/components/inspection/CompletionProgress';
 import SafetyCheckModal from '@/components/inspection/SafetyCheckModal';
-import { MOCK_CHECKLIST_ITEMS, PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
+import { MOCK_CHECKLIST_ITEMS } from '@/lib/mock-data';
 import type { ChecklistItem, InspectionRecordClientState } from '@/lib/mock-data';
+import type { StoredInspectionReport } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
+import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle, Send, Edit3 } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -20,19 +24,28 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs
+
+const LOCAL_STORAGE_REPORTS_KEY = 'forkliftInspectionReports';
 
 export default function InspectionPage() {
+  const [unitId, setUnitId] = useState('');
+  const [isUnitIdConfirmed, setIsUnitIdConfirmed] = useState(false);
   const [inspectionItems, setInspectionItems] = useState<InspectionRecordClientState[]>([]);
   const [currentItemIdToInspect, setCurrentItemIdToInspect] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [showUnsafeWarningDialog, setShowUnsafeWarningDialog] = useState(false);
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
 
   useEffect(() => {
-    resetInspectionState();
-  }, []);
+    if (isUnitIdConfirmed) {
+      resetInspectionState();
+    }
+  }, [isUnitIdConfirmed]);
 
-  const resetInspectionState = () => {
+  const resetInspectionState = (resetUnitId = false) => {
     const initialItems = MOCK_CHECKLIST_ITEMS.map(item => ({
       checklistItemId: item.id,
       part_name: item.part_name,
@@ -44,7 +57,12 @@ export default function InspectionPage() {
     }));
     setInspectionItems(initialItems);
     setCurrentItemIdToInspect(initialItems.length > 0 ? initialItems[0].checklistItemId : null);
-    setShowUnsafeWarningDialog(false); // Reset dialog state
+    setShowUnsafeWarningDialog(false);
+    setIsSubmittingReport(false);
+    if (resetUnitId) {
+      setUnitId('');
+      setIsUnitIdConfirmed(false);
+    }
   }
 
   const completedItemsCount = useMemo(() => inspectionItems.filter(item => item.completed).length, [inspectionItems]);
@@ -68,6 +86,13 @@ export default function InspectionPage() {
     return MOCK_CHECKLIST_ITEMS.find(item => item.id === currentItemIdToInspect) || null;
   }, [currentItemIdToInspect]);
 
+  const handleConfirmUnitId = () => {
+    if (!unitId.trim()) {
+      toast({ title: "Error", description: "Please enter a Forklift Unit ID.", variant: "destructive"});
+      return;
+    }
+    setIsUnitIdConfirmed(true);
+  };
 
   const handleQrScanOrSelect = (itemId: string) => {
     const itemToInspect = MOCK_CHECKLIST_ITEMS.find(i => i.id === itemId);
@@ -79,18 +104,7 @@ export default function InspectionPage() {
     }
   };
 
-  const handleInspectionSubmit = (itemId: string, isSafe: boolean, photoUrl: string) => {
-    setInspectionItems(prevItems =>
-      prevItems.map(item =>
-        item.checklistItemId === itemId
-          ? { ...item, is_safe: isSafe, photo_url: photoUrl, timestamp: new Date().toISOString(), completed: true }
-          : item
-      )
-    );
-    
-    const nextUncompletedItem = inspectionItems.find(item => !item.completed && item.checklistItemId !== itemId);
-    // Find the *next* item that isn't the one just submitted and isn't completed
-    // This needs to be based on the *updated* state, so we check against prevItems implicitly
+  const handleInspectionSubmitForItem = (itemId: string, isSafe: boolean, photoUrl: string) => {
      setInspectionItems(currentItems => {
         const updatedItems = currentItems.map(item =>
             item.checklistItemId === itemId
@@ -106,8 +120,6 @@ export default function InspectionPage() {
         }
         return updatedItems;
     });
-
-
     setIsModalOpen(false);
   };
   
@@ -115,13 +127,85 @@ export default function InspectionPage() {
     !inspectionItems.find(iItem => iItem.checklistItemId === mItem.id)?.completed
   );
 
+  const handleSubmitReport = () => {
+    if (!isInspectionComplete || !user) return;
+    setIsSubmittingReport(true);
+
+    const overallStatus = hasUnsafeItems ? 'Unsafe' : 'Safe';
+    const newReport: StoredInspectionReport = {
+      id: uuidv4(),
+      unitId: unitId,
+      date: new Date().toISOString(),
+      operator: user.username,
+      status: overallStatus,
+      items: [...inspectionItems], // Store a copy
+    };
+
+    try {
+      const existingReportsRaw = localStorage.getItem(LOCAL_STORAGE_REPORTS_KEY);
+      const existingReports: StoredInspectionReport[] = existingReportsRaw ? JSON.parse(existingReportsRaw) : [];
+      existingReports.push(newReport);
+      localStorage.setItem(LOCAL_STORAGE_REPORTS_KEY, JSON.stringify(existingReports));
+      
+      toast({
+        title: "Report Submitted",
+        description: `Inspection report for Unit ID ${unitId} has been saved locally.`,
+      });
+      // Optionally, navigate away or offer to start new inspection.
+      // For now, we'll allow starting a new one. The state will be reset below.
+    } catch (error) {
+      console.error("Error saving report to localStorage:", error);
+      toast({
+        title: "Submission Error",
+        description: "Could not save the report locally. Check console for details.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmittingReport(false);
+      // We don't reset unitId here, user might want to submit another for same unit
+      // resetInspectionState(true); // To reset everything including unit ID
+    }
+  };
+
+  if (!isUnitIdConfirmed) {
+    return (
+      <div className="space-y-8 flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
+        <Card className="w-full max-w-md shadow-lg">
+          <CardHeader>
+            <CardTitle className="font-headline text-2xl flex items-center">
+              <Edit3 className="mr-3 h-7 w-7 text-primary" />
+              Enter Forklift Unit ID
+            </CardTitle>
+            <CardDescription>Please provide the Unit ID for the forklift you are inspecting.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <Label htmlFor="unitIdInput">Forklift Unit ID</Label>
+              <Input
+                id="unitIdInput"
+                type="text"
+                value={unitId}
+                onChange={(e) => setUnitId(e.target.value)}
+                placeholder="e.g., FL001"
+                className="mt-1 text-base"
+              />
+            </div>
+            <Button onClick={handleConfirmUnitId} size="lg" className="w-full text-base py-3">
+              Start Inspection for Unit {unitId || "ID"}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="font-headline text-3xl flex items-center">
             <ListChecks className="mr-3 h-8 w-8 text-primary" />
-            Forklift Inspection
+            Forklift Inspection: Unit {unitId}
           </CardTitle>
           <CardDescription>
             Complete all checklist items to ensure forklift safety. 
@@ -200,18 +284,32 @@ export default function InspectionPage() {
           </Card>
         </>
       ) : (
-        <div className="text-center mt-8 space-y-4">
+        <div className="text-center mt-8 space-y-6">
           <Card className="shadow-lg w-full max-w-md mx-auto">
             <CardHeader className="text-center">
-               <CheckCircle className="mx-auto h-16 w-16 text-green-500 mb-3" />
+               {hasUnsafeItems ? (
+                 <AlertTriangle className="mx-auto h-16 w-16 text-destructive mb-3" />
+               ) : (
+                 <CheckCircle className="mx-auto h-16 w-16 text-green-500 mb-3" />
+               )}
               <CardTitle className="font-headline text-2xl">
-                Inspection Complete!
+                Inspection Complete for Unit {unitId}!
               </CardTitle>
-              <CardDescription>All checklist items have been successfully inspected.</CardDescription>
+              <CardDescription>
+                Overall Status: <span className={hasUnsafeItems ? "font-bold text-destructive" : "font-bold text-green-600"}>{hasUnsafeItems ? "UNSAFE" : "SAFE"}</span>.
+                All checklist items have been inspected.
+              </CardDescription>
             </CardHeader>
-            <CardContent>
-              <Button onClick={resetInspectionState} size="lg" className="w-full text-base py-3">
-                Start New Inspection
+            <CardContent className="space-y-3">
+              <Button onClick={handleSubmitReport} size="lg" className="w-full text-base py-3 bg-accent hover:bg-accent/90 text-accent-foreground" disabled={isSubmittingReport}>
+                <Send className="mr-2 h-5 w-5" />
+                {isSubmittingReport ? "Submitting..." : "Submit Report"}
+              </Button>
+              <Button onClick={() => resetInspectionState(true)} size="lg" variant="outline" className="w-full text-base py-3">
+                Start New Inspection (Different Unit)
+              </Button>
+               <Button onClick={() => resetInspectionState(false)} size="lg" variant="outline" className="w-full text-base py-3">
+                Start New Inspection (Same Unit: {unitId})
               </Button>
             </CardContent>
           </Card>
@@ -222,7 +320,7 @@ export default function InspectionPage() {
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
         item={currentChecklistItemDetails}
-        onSubmit={handleInspectionSubmit}
+        onSubmit={handleInspectionSubmitForItem}
       />
 
       <AlertDialog open={showUnsafeWarningDialog} onOpenChange={setShowUnsafeWarningDialog}>
