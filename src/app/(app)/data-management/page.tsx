@@ -18,7 +18,6 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { PlusCircle, ListChecks, TruckIcon, Building, AlertTriangle, Loader2 } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
-import type { SwitchProps } from '@radix-ui/react-switch'; // For type checking
 import { Switch } from '@/components/ui/switch';
 
 
@@ -58,7 +57,7 @@ type DepartmentFormData = z.infer<typeof departmentSchema>;
 const mheUnitSchema = z.object({
   unit_code: z.string().min(1, "MHE Unit Code is required"),
   name: z.string().min(1, "MHE Name is required"),
-  department_id: z.string().optional().nullable(),
+  department_id: z.string().nullable().optional(), // Changed to nullable
   type: z.string().optional().nullable(),
   status: z.enum(['active', 'inactive', 'maintenance']).default('active'),
 });
@@ -113,7 +112,7 @@ export default function DataManagementPage() {
       const data = await response.json();
       setDepartments(Array.isArray(data) ? data : []);
     } catch (error) {
-      toast({ title: "Error", description: (error instanceof Error) ? error.message : "Could not fetch departments.", variant: "destructive" });
+      toast({ title: "Error Fetching Departments", description: (error instanceof Error) ? error.message : "Could not fetch departments.", variant: "destructive" });
       setDepartments([]);
     } finally {
       setIsLoadingDepartments(false);
@@ -126,19 +125,18 @@ export default function DataManagementPage() {
       const response = await fetch(`${apiBaseUrl}/mhe_units_api.php`);
       if (!response.ok) throw new Error(`Failed to fetch MHE units: ${response.statusText}`);
       const data: MheUnit[] = await response.json();
-      // Enhance MHE data with department names for display
       const enhancedData = data.map(mhe => ({
         ...mhe,
         department_name: departments.find(d => d.id === mhe.department_id)?.name || 'N/A'
       }));
       setMheUnits(Array.isArray(enhancedData) ? enhancedData : []);
     } catch (error) {
-      toast({ title: "Error", description: (error instanceof Error) ? error.message : "Could not fetch MHE units.", variant: "destructive" });
+      toast({ title: "Error Fetching MHE Units", description: (error instanceof Error) ? error.message : "Could not fetch MHE units.", variant: "destructive" });
       setMheUnits([]);
     } finally {
       setIsLoadingMheUnits(false);
     }
-  }, [apiBaseUrl, toast, departments]); // Depends on departments for name mapping
+  }, [apiBaseUrl, toast, departments]);
 
   const fetchChecklistItems = useCallback(async () => {
     setIsLoadingChecklistItems(true);
@@ -148,7 +146,7 @@ export default function DataManagementPage() {
       const data = await response.json();
       setChecklistItems(Array.isArray(data) ? data : []);
     } catch (error) {
-      toast({ title: "Error", description: (error instanceof Error) ? error.message : "Could not fetch checklist items.", variant: "destructive" });
+      toast({ title: "Error Fetching Checklist Items", description: (error instanceof Error) ? error.message : "Could not fetch checklist items.", variant: "destructive" });
       setChecklistItems([]);
     } finally {
       setIsLoadingChecklistItems(false);
@@ -159,14 +157,13 @@ export default function DataManagementPage() {
   useEffect(() => {
     if (user?.role === 'supervisor') {
       fetchDepartments();
-      // MHE Units will be fetched after departments (or in parallel if dept names aren't immediately needed for listing)
       fetchChecklistItems();
     }
   }, [user, fetchDepartments, fetchChecklistItems]);
   
   useEffect(() => {
-    if (user?.role === 'supervisor' && departments.length > 0 && isLoadingDepartments === false) { // ensure departments are loaded
-         fetchMheUnits(); // Fetch MHEs once departments are available for name mapping
+    if (user?.role === 'supervisor' && departments.length > 0 && !isLoadingDepartments) {
+         fetchMheUnits();
     }
   }, [user, departments, fetchMheUnits, isLoadingDepartments])
 
@@ -180,21 +177,29 @@ export default function DataManagementPage() {
         body: JSON.stringify(data),
       });
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: `Failed to add department: ${response.statusText}` }));
-        throw new Error(errorData.message);
+        let errorData = { message: `Request failed: ${response.status} ${response.statusText}` };
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          if (response.status === 409) { // Conflict
+            throw new Error("Failed to add department. The department name may already exist. Please use a unique name.");
+          }
+          const textError = await response.text().catch(() => ''); // Try to get text if not JSON
+          throw new Error(textError ? `Server error: ${textError.substring(0,100)}...` : errorData.message);
+        }
+        throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
       }
       toast({ title: "Success", description: "Department added successfully." });
-      fetchDepartments(); // Refresh list
+      fetchDepartments();
       resetDeptForm();
       setIsAddDeptModalOpen(false);
     } catch (error) {
-      toast({ title: "Error", description: (error instanceof Error) ? error.message : "Could not add department.", variant: "destructive" });
+      toast({ title: "Error Adding Department", description: (error instanceof Error) ? error.message : "Could not add department.", variant: "destructive" });
     }
   };
 
   const onAddMheUnit = async (data: MheUnitFormData) => {
     try {
-      // Ensure department_id is null if it's the placeholder for "None"
       const payload = {
         ...data,
         department_id: data.department_id === NONE_SELECT_VALUE ? null : data.department_id,
@@ -205,15 +210,24 @@ export default function DataManagementPage() {
         body: JSON.stringify(payload),
       });
       if (!response.ok) {
-         const errorData = await response.json().catch(() => ({ message: `Failed to add MHE unit: ${response.statusText}` }));
-        throw new Error(errorData.message);
+        let errorData = { message: `Request failed: ${response.status} ${response.statusText}` };
+        try {
+          errorData = await response.json();
+        } catch (e) {
+           if (response.status === 409) { // Conflict
+            throw new Error("Failed to add MHE unit. The Unit Code may already exist. Please use a unique code.");
+          }
+          const textError = await response.text().catch(() => '');
+          throw new Error(textError ? `Server error: ${textError.substring(0,100)}...` : errorData.message);
+        }
+        throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
       }
       toast({ title: "Success", description: "MHE unit added successfully." });
-      fetchMheUnits(); // Refresh list
+      fetchMheUnits();
       resetMheForm();
       setIsAddMheModalOpen(false);
     } catch (error) {
-      toast({ title: "Error", description: (error instanceof Error) ? error.message : "Could not add MHE unit.", variant: "destructive" });
+      toast({ title: "Error Adding MHE Unit", description: (error instanceof Error) ? error.message : "Could not add MHE unit.", variant: "destructive" });
     }
   };
 
@@ -225,15 +239,23 @@ export default function DataManagementPage() {
         body: JSON.stringify(data),
       });
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: `Failed to add checklist item: ${response.statusText}` }));
-        throw new Error(errorData.message);
+        let errorData = { message: `Request failed: ${response.status} ${response.statusText}` };
+        try {
+          errorData = await response.json();
+        } catch (e) {
+          // 409 is less likely for checklist items based on user-provided fields in the current schema
+          // but other errors can occur.
+          const textError = await response.text().catch(() => '');
+          throw new Error(textError ? `Server error: ${textError.substring(0,100)}...` : errorData.message);
+        }
+        throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
       }
       toast({ title: "Success", description: "Checklist item added successfully." });
-      fetchChecklistItems(); // Refresh list
+      fetchChecklistItems();
       resetItemForm();
       setIsAddItemModalOpen(false);
     } catch (error) {
-      toast({ title: "Error", description: (error instanceof Error) ? error.message : "Could not add checklist item.", variant: "destructive" });
+      toast({ title: "Error Adding Checklist Item", description: (error instanceof Error) ? error.message : "Could not add checklist item.", variant: "destructive" });
     }
   };
 
@@ -345,7 +367,7 @@ export default function DataManagementPage() {
               </div>
                <Dialog open={isAddMheModalOpen} onOpenChange={setIsAddMheModalOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" onClick={() => { resetMheForm({status: 'active'}); setIsAddMheModalOpen(true);}}><PlusCircle className="mr-2 h-4 w-4" /> Add MHE</Button>
+                  <Button variant="outline" onClick={() => { resetMheForm({status: 'active', department_id: null}); setIsAddMheModalOpen(true);}}><PlusCircle className="mr-2 h-4 w-4" /> Add MHE</Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader><DialogTitle>Add New MHE Unit</DialogTitle></DialogHeader>
@@ -368,11 +390,7 @@ export default function DataManagementPage() {
                         render={({ field }) => (
                           <Select
                             onValueChange={(selectedValue) => {
-                              if (selectedValue === NONE_SELECT_VALUE) {
-                                field.onChange(null);
-                              } else {
-                                field.onChange(selectedValue);
-                              }
+                                field.onChange(selectedValue === NONE_SELECT_VALUE ? null : selectedValue);
                             }}
                             value={field.value === null || field.value === undefined ? NONE_SELECT_VALUE : field.value}
                           >
@@ -388,6 +406,7 @@ export default function DataManagementPage() {
                           </Select>
                         )}
                       />
+                       {mheErrors.department_id && <p className="text-sm text-destructive mt-1">{mheErrors.department_id.message}</p>}
                     </div>
                     <div>
                       <Label htmlFor="mheType">Type (e.g., Forklift, Pallet Jack - Optional)</Label>
@@ -472,6 +491,7 @@ export default function DataManagementPage() {
                        <Controller
                         name="is_active"
                         control={controlItem}
+                        defaultValue={true}
                         render={({ field }) => (
                            <Switch
                             id="itemIsActive"
@@ -514,3 +534,6 @@ export default function DataManagementPage() {
     </div>
   );
 }
+
+
+    
