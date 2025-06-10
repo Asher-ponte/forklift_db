@@ -10,7 +10,7 @@ import { MOCK_CHECKLIST_ITEMS, PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-dat
 import type { ChecklistItem, InspectionRecordClientState } from '@/lib/mock-data';
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ListChecks, ScanLine, AlertCircle, CheckCircle } from 'lucide-react';
+import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -227,9 +227,12 @@ export default function InspectionPage() {
 
       <AlertDialog open={showUnsafeWarningDialog} onOpenChange={setShowUnsafeWarningDialog}>
         <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Unsafe MHE Warning</AlertDialogTitle>
-            <AlertDialogDescription>
+          <AlertDialogHeader className="text-left">
+            <AlertDialogTitle className="flex items-center text-destructive">
+              <AlertTriangle className="mr-2 h-6 w-6" />
+              Unsafe MHE Warning
+            </AlertDialogTitle>
+            <AlertDialogDescription className="pt-2">
               Do not use the MHE report to supervisor.
             </AlertDialogDescription>
           </AlertDialogHeader>
