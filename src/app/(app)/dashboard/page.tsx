@@ -12,9 +12,7 @@ import { Input } from '@/components/ui/input';
 import { CheckCircle, AlertTriangle, Clock, ScanLine, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
 import type { StoredInspectionReport, StoredDowntimeLog } from '@/lib/types';
-
-const LOCAL_STORAGE_REPORTS_KEY = 'forkliftInspectionReports';
-const LOCAL_STORAGE_DOWNTIME_KEY = 'forkliftDowntimeLogs';
+import { useToast } from '@/hooks/use-toast';
 
 interface DashboardStats {
   totalInspectionsToday: number;
@@ -25,6 +23,7 @@ interface DashboardStats {
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const { toast } = useToast();
   const [stats, setStats] = useState<DashboardStats>({
     totalInspectionsToday: 0,
     safeForkliftsToday: 0,
@@ -36,47 +35,106 @@ export default function DashboardPage() {
   const [selectedUnitId, setSelectedUnitId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
-  const loadDashboardData = useCallback(() => {
+  const loadDashboardData = useCallback(async () => {
     setIsLoading(true);
-    const storedReportsRaw = localStorage.getItem(LOCAL_STORAGE_REPORTS_KEY);
-    const reports: StoredInspectionReport[] = storedReportsRaw ? JSON.parse(storedReportsRaw) : [];
-    setAllReports(reports);
+    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
-    const storedDowntimeLogsRaw = localStorage.getItem(LOCAL_STORAGE_DOWNTIME_KEY);
-    const downtimeLogs: StoredDowntimeLog[] = storedDowntimeLogsRaw ? JSON.parse(storedDowntimeLogsRaw) : [];
-    setAllDowntimeLogs(downtimeLogs);
+    try {
+      const [reportsResponse, downtimeResponse] = await Promise.all([
+        fetch(`${apiBaseUrl}/inspection_reports.php`),
+        fetch(`${apiBaseUrl}/downtime_logs.php`)
+      ]);
 
-    const today = new Date().toISOString().split('T')[0];
-    const todayReports = reports.filter(report => report.date.startsWith(today));
-
-    let safeTodayCount = 0;
-    let unsafeTodayCount = 0;
-    
-    const latestReportForUnitToday: Record<string, StoredInspectionReport> = {};
-
-    // Get the latest report for each unit inspected today
-    todayReports.forEach(report => {
-      if (!latestReportForUnitToday[report.unitId] || new Date(report.date) > new Date(latestReportForUnitToday[report.unitId].date)) {
-        latestReportForUnitToday[report.unitId] = report;
+      // Process Inspection Reports
+      let fetchedReports: StoredInspectionReport[] = [];
+      if (reportsResponse.ok) {
+        const reportsData = await reportsResponse.json();
+        if (Array.isArray(reportsData)) {
+          fetchedReports = reportsData.map((report: any) => ({
+            ...report,
+            // Ensure items is always an array, even if null/undefined from API for some reports
+            items: Array.isArray(report.items) ? report.items : [], 
+          }));
+        } else {
+          console.error("API did not return an array for inspection reports:", reportsData);
+          toast({ title: "Data Error", description: "Invalid format for inspection reports from server.", variant: "destructive" });
+        }
+      } else {
+        const errorText = await reportsResponse.text();
+        toast({ title: "Error Loading Reports", description: `Failed to fetch inspection reports: ${reportsResponse.status} ${errorText.substring(0,100)}`, variant: "destructive" });
       }
-    });
+      setAllReports(fetchedReports);
 
-    Object.values(latestReportForUnitToday).forEach(report => {
-      if (report.status === 'Safe') {
-        safeTodayCount++;
-      } else if (report.status === 'Unsafe') {
-        unsafeTodayCount++;
+      // Process Downtime Logs
+      let fetchedDowntimeLogs: StoredDowntimeLog[] = [];
+      if (downtimeResponse.ok) {
+        const downtimeData = await downtimeResponse.json();
+        if (Array.isArray(downtimeData)) {
+          fetchedDowntimeLogs = downtimeData;
+        } else {
+          console.error("API did not return an array for downtime logs:", downtimeData);
+          toast({ title: "Data Error", description: "Invalid format for downtime logs from server.", variant: "destructive" });
+        }
+      } else {
+        const errorText = await downtimeResponse.text();
+        toast({ title: "Error Loading Downtime Logs", description: `Failed to fetch downtime logs: ${downtimeResponse.status} ${errorText.substring(0,100)}`, variant: "destructive" });
       }
-    });
-    
-    setStats(prevStats => ({
-      ...prevStats,
-      totalInspectionsToday: todayReports.length, // This counts all inspections today, not unique units
-      safeForkliftsToday: safeTodayCount,
-      unsafeForkliftsToday: unsafeTodayCount,
-    }));
-    setIsLoading(false);
-  }, []);
+      setAllDowntimeLogs(fetchedDowntimeLogs);
+
+      // Calculate Stats
+      const today = new Date().toISOString().split('T')[0];
+      const todayReports = fetchedReports.filter(report => {
+        try {
+          return new Date(report.date).toISOString().split('T')[0] === today;
+        } catch (e) { return false; }
+      });
+
+      let safeTodayCount = 0;
+      let unsafeTodayCount = 0;
+      const latestReportForUnitToday: Record<string, StoredInspectionReport> = {};
+
+      todayReports.forEach(report => {
+        try {
+            const reportDate = new Date(report.date);
+            if (!latestReportForUnitToday[report.unitId] || reportDate > new Date(latestReportForUnitToday[report.unitId].date)) {
+            latestReportForUnitToday[report.unitId] = report;
+            }
+        } catch(e) {
+            console.warn("Could not parse date for report in stats calculation", report);
+        }
+      });
+
+      Object.values(latestReportForUnitToday).forEach(report => {
+        if (report.status === 'Safe') {
+          safeTodayCount++;
+        } else if (report.status === 'Unsafe') {
+          unsafeTodayCount++;
+        }
+      });
+      
+      setStats(prevStats => ({
+        ...prevStats,
+        totalInspectionsToday: todayReports.length,
+        safeForkliftsToday: safeTodayCount,
+        unsafeForkliftsToday: unsafeTodayCount,
+      }));
+
+    } catch (error) {
+      console.error("Failed to load dashboard data from API:", error);
+      toast({ title: "Dashboard Load Error", description: (error instanceof Error) ? error.message : "An unexpected error occurred.", variant: "destructive" });
+      // Keep existing data or reset, depending on desired behavior
+      setAllReports([]);
+      setAllDowntimeLogs([]);
+      setStats(prevStats => ({
+        ...prevStats,
+        totalInspectionsToday: 0,
+        safeForkliftsToday: 0,
+        unsafeForkliftsToday: 0,
+      }));
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
 
   useEffect(() => {
     loadDashboardData();
@@ -89,8 +147,8 @@ export default function DashboardPage() {
           <h1 className="text-3xl font-headline font-bold">Welcome, {user?.username}!</h1>
           <p className="text-muted-foreground">Here's an overview of your forklift operations.</p>
         </div>
-        <Button onClick={loadDashboardData} variant="outline" size="sm" className="mt-2 sm:mt-0">
-          <RotateCcw className="mr-2 h-4 w-4" /> Refresh Data
+        <Button onClick={loadDashboardData} variant="outline" size="sm" className="mt-2 sm:mt-0" disabled={isLoading}>
+          <RotateCcw className="mr-2 h-4 w-4" /> {isLoading ? "Refreshing..." : "Refresh Data"}
         </Button>
       </div>
       
@@ -103,7 +161,6 @@ export default function DashboardPage() {
           </CardHeader>
           <CardContent>
             {isLoading ? <div className="text-2xl font-bold animate-pulse">--</div> : <div className="text-2xl font-bold">{stats.totalInspectionsToday}</div>}
-            {/* <p className="text-xs text-muted-foreground">+10% from yesterday</p> */}
           </CardContent>
         </Card>
         <Card className="shadow-md hover:shadow-lg transition-shadow">
@@ -174,4 +231,5 @@ export default function DashboardPage() {
       </Card>
     </div>
   );
-}
+
+    
