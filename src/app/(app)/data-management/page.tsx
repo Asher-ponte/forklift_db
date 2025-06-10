@@ -73,6 +73,7 @@ const checklistItemSchema = z.object({
 });
 type ChecklistItemFormData = z.infer<typeof checklistItemSchema>;
 
+const NONE_SELECT_VALUE = "__NONE__";
 
 export default function DataManagementPage() {
   const { user, loading: authLoading } = useAuth();
@@ -164,10 +165,10 @@ export default function DataManagementPage() {
   }, [user, fetchDepartments, fetchChecklistItems]);
   
   useEffect(() => {
-    if (user?.role === 'supervisor' && departments.length > 0) {
+    if (user?.role === 'supervisor' && departments.length > 0 && isLoadingDepartments === false) { // ensure departments are loaded
          fetchMheUnits(); // Fetch MHEs once departments are available for name mapping
     }
-  }, [user, departments, fetchMheUnits])
+  }, [user, departments, fetchMheUnits, isLoadingDepartments])
 
 
   // --- Form Submission Handlers ---
@@ -193,10 +194,15 @@ export default function DataManagementPage() {
 
   const onAddMheUnit = async (data: MheUnitFormData) => {
     try {
+      // Ensure department_id is null if it's the placeholder for "None"
+      const payload = {
+        ...data,
+        department_id: data.department_id === NONE_SELECT_VALUE ? null : data.department_id,
+      };
       const response = await fetch(`${apiBaseUrl}/mhe_units_api.php`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       });
       if (!response.ok) {
          const errorData = await response.json().catch(() => ({ message: `Failed to add MHE unit: ${response.statusText}` }));
@@ -339,7 +345,7 @@ export default function DataManagementPage() {
               </div>
                <Dialog open={isAddMheModalOpen} onOpenChange={setIsAddMheModalOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" onClick={() => { resetMheForm(); setIsAddMheModalOpen(true);}}><PlusCircle className="mr-2 h-4 w-4" /> Add MHE</Button>
+                  <Button variant="outline" onClick={() => { resetMheForm({status: 'active'}); setIsAddMheModalOpen(true);}}><PlusCircle className="mr-2 h-4 w-4" /> Add MHE</Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader><DialogTitle>Add New MHE Unit</DialogTitle></DialogHeader>
@@ -360,11 +366,24 @@ export default function DataManagementPage() {
                         name="department_id"
                         control={controlMhe}
                         render={({ field }) => (
-                          <Select onValueChange={field.onChange} defaultValue={field.value || ""}>
-                            <SelectTrigger className="mt-1"><SelectValue placeholder="Select department" /></SelectTrigger>
+                          <Select
+                            onValueChange={(selectedValue) => {
+                              if (selectedValue === NONE_SELECT_VALUE) {
+                                field.onChange(null);
+                              } else {
+                                field.onChange(selectedValue);
+                              }
+                            }}
+                            value={field.value === null || field.value === undefined ? NONE_SELECT_VALUE : field.value}
+                          >
+                            <SelectTrigger className="mt-1">
+                              <SelectValue placeholder="Select department" />
+                            </SelectTrigger>
                             <SelectContent>
-                              <SelectItem value=""><em>None</em></SelectItem>
-                              {departments.map(dept => <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>)}
+                              <SelectItem value={NONE_SELECT_VALUE}><em>None</em></SelectItem>
+                              {departments.map(dept => (
+                                <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
+                              ))}
                             </SelectContent>
                           </Select>
                         )}
@@ -495,6 +514,3 @@ export default function DataManagementPage() {
     </div>
   );
 }
-
-
-    
