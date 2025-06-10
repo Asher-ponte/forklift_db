@@ -102,14 +102,26 @@ export default function ReportPage() {
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
 
-      const reportsFromAPI: StoredInspectionReport[] = await response.json();
+      let reportsFromAPI: StoredInspectionReport[] | {} = await response.json();
+
+      // Handle case where API returns an empty object {} for no reports
+      if (typeof reportsFromAPI === 'object' && reportsFromAPI !== null && !Array.isArray(reportsFromAPI) && Object.keys(reportsFromAPI).length === 0) {
+        reportsFromAPI = [];
+      }
+      
+      // Check if reportsFromAPI is an object with a 'data' property which is an array
+      if (typeof reportsFromAPI === 'object' && reportsFromAPI !== null && !Array.isArray(reportsFromAPI) && Array.isArray((reportsFromAPI as any).data)) {
+        reportsFromAPI = (reportsFromAPI as any).data;
+      }
+
 
       if (!Array.isArray(reportsFromAPI)) {
         console.error("API did not return an array for reports:", reportsFromAPI);
-        throw new Error("Invalid data format received from server. Expected an array.");
+        toast({ title: "Data Format Error", description: "Unexpected data format received for reports from server.", variant: "destructive" });
+        setAllReports([]); // Set to empty array on error
+      } else {
+        setAllReports(processApiReportsToDisplayEntries(reportsFromAPI as StoredInspectionReport[]));
       }
-
-      setAllReports(processApiReportsToDisplayEntries(reportsFromAPI));
 
     } catch (error) {
       console.error("Failed to fetch reports:", error);
@@ -383,3 +395,4 @@ export default function ReportPage() {
     </div>
   );
 }
+
