@@ -8,9 +8,20 @@ export interface InspectionReportFull {
   operator: string;
   status: 'Safe' | 'Unsafe'; // Overall status based on items
   items: InspectionRecordClientState[];
-  // photoUrl for the report page could be the first unsafe item's photo, or first item's photo
-  // dataAiHint would be derived similarly
 }
 
-// This type will be used for what's stored in localStorage
+// This type will be used for what's stored in localStorage for inspection reports
 export type StoredInspectionReport = InspectionReportFull;
+
+// New type for downtime log entries
+export interface DowntimeLogEntry {
+  id: string;
+  unitId: string;
+  reason: string;
+  startTime: string; // ISO string
+  endTime?: string | null; // ISO string, optional
+  loggedAt: string; // ISO string, when the log was created by the user
+}
+
+// This type will be used for what's stored in localStorage for downtime logs
+export type StoredDowntimeLog = DowntimeLogEntry;

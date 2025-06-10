@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useState } from 'react';
@@ -8,8 +9,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { Clock, Save } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
+import type { StoredDowntimeLog } from '@/lib/types';
 
-export default function DowntimeForm() {
+const LOCAL_STORAGE_DOWNTIME_KEY = 'forkliftDowntimeLogs';
+
+interface DowntimeFormProps {
+  onLogAdded: () => void; // Callback to inform parent that a log has been added
+}
+
+export default function DowntimeForm({ onLogAdded }: DowntimeFormProps) {
   const [unitId, setUnitId] = useState('');
   const [reason, setReason] = useState('');
   const [startTime, setStartTime] = useState('');
@@ -24,17 +33,40 @@ export default function DowntimeForm() {
       return;
     }
     setIsSubmitting(true);
-    // Mock API call
-    console.log("Downtime Log:", { unitId, reason, startTime, endTime });
-    await new Promise(resolve => setTimeout(resolve, 1000)); 
     
-    toast({ title: "Downtime Logged", description: `Downtime for unit ${unitId} has been successfully recorded.`});
-    // Reset form
-    setUnitId('');
-    setReason('');
-    setStartTime('');
-    setEndTime('');
-    setIsSubmitting(false);
+    const newLogEntry: StoredDowntimeLog = {
+      id: uuidv4(),
+      unitId,
+      reason,
+      startTime,
+      endTime: endTime || null,
+      loggedAt: new Date().toISOString(),
+    };
+
+    try {
+      const existingLogsRaw = localStorage.getItem(LOCAL_STORAGE_DOWNTIME_KEY);
+      const existingLogs: StoredDowntimeLog[] = existingLogsRaw ? JSON.parse(existingLogsRaw) : [];
+      existingLogs.push(newLogEntry);
+      localStorage.setItem(LOCAL_STORAGE_DOWNTIME_KEY, JSON.stringify(existingLogs));
+      
+      toast({ title: "Downtime Logged", description: `Downtime for unit ${unitId} has been successfully recorded.`});
+      onLogAdded(); // Notify parent to refresh list
+
+      // Reset form
+      setUnitId('');
+      setReason('');
+      setStartTime('');
+      setEndTime('');
+    } catch (error) {
+      console.error("Error saving downtime log to localStorage:", error);
+      toast({
+        title: "Submission Error",
+        description: "Could not save the downtime log locally. Check console for details.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
