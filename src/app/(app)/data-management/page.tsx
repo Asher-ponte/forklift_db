@@ -118,7 +118,7 @@ export default function DataManagementPage() {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Fetch Departments Error Text:', errorText);
-        throw new Error(`Failed to fetch departments: ${response.status} ${response.statusText}. Check Network tab for details.`);
+        throw new Error(`Failed to fetch departments: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
       }
       const data = await response.json();
       console.log('Fetched Departments Data:', data);
@@ -134,7 +134,6 @@ export default function DataManagementPage() {
 
   const fetchMheUnits = useCallback(async () => {
     if (!apiBaseUrl) {
-      // Already handled by fetchDepartments, but good for safety
       setIsLoadingMheUnits(false);
       return;
     }
@@ -145,7 +144,7 @@ export default function DataManagementPage() {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Fetch MHE Units Error Text:', errorText);
-        throw new Error(`Failed to fetch MHE units: ${response.status} ${response.statusText}. Check Network tab for details.`);
+        throw new Error(`Failed to fetch MHE units: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
       }
       const data: MheUnit[] = await response.json();
       console.log('Fetched MHE Units Data:', data);
@@ -165,7 +164,6 @@ export default function DataManagementPage() {
 
   const fetchChecklistItems = useCallback(async () => {
      if (!apiBaseUrl) {
-      // Already handled by fetchDepartments, but good for safety
       setIsLoadingChecklistItems(false);
       return;
     }
@@ -176,7 +174,7 @@ export default function DataManagementPage() {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Fetch Checklist Items Error Text:', errorText);
-        throw new Error(`Failed to fetch checklist items: ${response.status} ${response.statusText}. Check Network tab for details.`);
+        throw new Error(`Failed to fetch checklist items: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
       }
       const data = await response.json();
       console.log('Fetched Checklist Items Data:', data);
@@ -199,11 +197,14 @@ export default function DataManagementPage() {
   }, [user, fetchDepartments, fetchChecklistItems]);
   
   useEffect(() => {
-    // Fetch MHE Units only after the attempt to fetch departments has concluded
-    if (user?.role === 'supervisor' && !isLoadingDepartments) {
+    if (user?.role === 'supervisor' && !isLoadingDepartments && departments.length > 0) {
          fetchMheUnits();
+    } else if (user?.role === 'supervisor' && !isLoadingDepartments && departments.length === 0) {
+        // If there are no departments, we might still want to fetch MHE units (they might not have a department_id)
+        // Or at least ensure loadingMHEUnits is set to false
+        fetchMheUnits(); // Or just setIsLoadingMheUnits(false); if no departments means no MHE units can be meaningfully displayed
     }
-  }, [user, fetchMheUnits, isLoadingDepartments]);
+  }, [user, fetchMheUnits, isLoadingDepartments, departments.length]);
 
 
   // --- Form Submission Handlers ---
@@ -216,19 +217,19 @@ export default function DataManagementPage() {
       });
       if (!response.ok) {
         let errorData = { message: `Request failed: ${response.status} ${response.statusText}` };
+        if (response.status === 409) { // Conflict
+            throw new Error("Failed to add department. The department name may already exist. Please use a unique name.");
+        }
         try {
           errorData = await response.json();
         } catch (e) {
-          if (response.status === 409) { // Conflict
-            throw new Error("Failed to add department. The department name may already exist. Please use a unique name.");
-          }
-          const textError = await response.text().catch(() => ''); // Try to get text if not JSON
+          const textError = await response.text().catch(() => ''); 
           throw new Error(textError ? `Server error: ${textError.substring(0,100)}...` : errorData.message);
         }
         throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
       }
       toast({ title: "Success", description: "Department added successfully." });
-      fetchDepartments(); // Re-fetch
+      fetchDepartments(); 
       resetDeptForm();
       setIsAddDeptModalOpen(false);
     } catch (error) {
@@ -249,19 +250,19 @@ export default function DataManagementPage() {
       });
       if (!response.ok) {
         let errorData = { message: `Request failed: ${response.status} ${response.statusText}` };
+         if (response.status === 409) { 
+            throw new Error("Failed to add MHE unit. The Unit Code may already exist. Please use a unique code.");
+          }
         try {
           errorData = await response.json();
         } catch (e) {
-           if (response.status === 409) { // Conflict
-            throw new Error("Failed to add MHE unit. The Unit Code may already exist. Please use a unique code.");
-          }
           const textError = await response.text().catch(() => '');
           throw new Error(textError ? `Server error: ${textError.substring(0,100)}...` : errorData.message);
         }
         throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
       }
       toast({ title: "Success", description: "MHE unit added successfully." });
-      fetchMheUnits(); // Re-fetch
+      fetchMheUnits(); 
       resetMheForm();
       setIsAddMheModalOpen(false);
     } catch (error) {
@@ -287,7 +288,7 @@ export default function DataManagementPage() {
         throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
       }
       toast({ title: "Success", description: "Checklist item added successfully." });
-      fetchChecklistItems(); // Re-fetch
+      fetchChecklistItems(); 
       resetItemForm();
       setIsAddItemModalOpen(false);
     } catch (error) {
@@ -305,10 +306,9 @@ export default function DataManagementPage() {
   }
 
   if (!user || user.role !== 'supervisor') {
-    // Client-side redirect attempt
     if (typeof window !== 'undefined' && user && user.role !== 'supervisor') {
-        router.replace('/dashboard'); // Or some other appropriate page
-        return ( // Temporary message while redirecting
+        router.replace('/dashboard'); 
+        return ( 
              <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)] text-center">
                 <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
                 <h2 className="text-2xl font-semibold text-destructive">Access Denied</h2>
@@ -316,7 +316,6 @@ export default function DataManagementPage() {
             </div>
         );
     }
-    // Fallback for SSR or if redirect hasn't happened yet
      return (
         <div className="flex flex-col items-center justify-center h-[calc(100vh-200px)] text-center">
             <AlertTriangle className="h-16 w-16 text-destructive mb-4" />
@@ -360,7 +359,10 @@ export default function DataManagementPage() {
                   <Button variant="outline" onClick={() => { resetDeptForm(); setIsAddDeptModalOpen(true);}}><PlusCircle className="mr-2 h-4 w-4" /> Add Department</Button>
                 </DialogTrigger>
                 <DialogContent>
-                  <DialogHeader><DialogTitle>Add New Department</DialogTitle></DialogHeader>
+                  <DialogHeader>
+                    <DialogTitle>Add New Department</DialogTitle>
+                    <DialogDescription>Fill in the details for the new department.</DialogDescription>
+                  </DialogHeader>
                   <form onSubmit={handleSubmitDept(onAddDepartment)} className="space-y-4 py-4">
                     <div>
                       <Label htmlFor="deptName">Department Name</Label>
@@ -408,7 +410,10 @@ export default function DataManagementPage() {
                   <Button variant="outline" onClick={() => { resetMheForm({status: 'active', department_id: null}); setIsAddMheModalOpen(true);}}><PlusCircle className="mr-2 h-4 w-4" /> Add MHE</Button>
                 </DialogTrigger>
                 <DialogContent>
-                  <DialogHeader><DialogTitle>Add New MHE Unit</DialogTitle></DialogHeader>
+                  <DialogHeader>
+                    <DialogTitle>Add New MHE Unit</DialogTitle>
+                    <DialogDescription>Fill in the details for the new MHE unit.</DialogDescription>
+                  </DialogHeader>
                   <form onSubmit={handleSubmitMhe(onAddMheUnit)} className="space-y-4 py-4">
                     <div>
                       <Label htmlFor="mheUnitCode">MHE Unit Code (e.g., FL001)</Label>
@@ -430,8 +435,7 @@ export default function DataManagementPage() {
                             onValueChange={(selectedValue) => {
                                 field.onChange(selectedValue === NONE_SELECT_VALUE ? null : selectedValue);
                             }}
-                            // Ensure the value prop correctly reflects null/undefined for the "None" state
-                            value={field.value === null || field.value === undefined ? NONE_SELECT_VALUE : field.value}
+                            value={field.value === null || field.value === undefined || field.value === '' ? NONE_SELECT_VALUE : field.value}
                           >
                             <SelectTrigger className="mt-1">
                               <SelectValue placeholder="Select department" />
@@ -506,7 +510,10 @@ export default function DataManagementPage() {
                   <Button variant="outline" onClick={() => { resetItemForm({is_active: true}); setIsAddItemModalOpen(true);}}><PlusCircle className="mr-2 h-4 w-4" /> Add Item</Button>
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-lg">
-                  <DialogHeader><DialogTitle>Add New Inspection Item</DialogTitle></DialogHeader>
+                  <DialogHeader>
+                    <DialogTitle>Add New Inspection Item</DialogTitle>
+                    <DialogDescription>Fill in the details for the new inspection checklist item.</DialogDescription>
+                  </DialogHeader>
                   <form onSubmit={handleSubmitItem(onAddChecklistItem)} className="space-y-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
                     <div>
                       <Label htmlFor="itemPartName">Part Name</Label>
@@ -573,3 +580,4 @@ export default function DataManagementPage() {
     </div>
   );
 }
+
