@@ -1,3 +1,4 @@
+
 'use client';
 
 import Link from 'next/link';
@@ -5,7 +6,7 @@ import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import { useAuth } from '@/context/AuthContext';
-import { Truck, LayoutDashboard, ScanLine, FileText, Clock, Wrench, LogOut, Menu, UserCircle } from 'lucide-react';
+import { Truck, LayoutDashboard, ScanLine, FileText, Clock, Wrench, LogOut, Menu, UserCircle, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 
@@ -15,6 +16,7 @@ const navItems = [
   { href: '/report', label: 'Forklift Report', icon: FileText },
   { href: '/downtime', label: 'Downtime Log', icon: Clock },
   { href: '/tools', label: 'Tools', icon: Wrench },
+  { href: '/data-management', label: 'Data Management', icon: Database },
 ];
 
 export default function Navbar() {
@@ -90,7 +92,7 @@ export default function Navbar() {
           </div>
           <div className="h-8 w-8 bg-muted rounded-md animate-pulse md:hidden"></div>
           <div className="hidden md:flex items-center space-x-2">
-            {[...Array(5)].map((_, i) => <div key={i} className="h-8 w-24 bg-muted rounded-md animate-pulse"></div>)}
+            {[...Array(navItems.length)].map((_, i) => <div key={i} className="h-8 w-24 bg-muted rounded-md animate-pulse"></div>)}
             <div className="h-8 w-8 bg-muted rounded-full animate-pulse"></div>
           </div>
         </div>

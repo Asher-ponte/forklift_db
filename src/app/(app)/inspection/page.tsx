@@ -1,9 +1,8 @@
 
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import CompletionProgress from '@/components/inspection/CompletionProgress';
@@ -14,7 +13,7 @@ import type { StoredInspectionReport, StoredDowntimeLog } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle, Send, Edit3 } from 'lucide-react';
+import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle, Send, Edit3, Warehouse, TruckIcon } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,10 +24,42 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 
+// Mock Data for Departments and MHEs (Material Handling Equipment)
+// In a real app, this data would be fetched from the backend / Data Management page
+interface Department {
+  id: string;
+  name: string;
+}
+
+interface Mhe {
+  id: string; // This will be the "Unit ID"
+  name: string; // Display name for the MHE
+  departmentId: string;
+  // type?: string; // e.g., 'Forklift', 'Pallet Jack' - could determine checklist in future
+}
+
+const MOCK_DEPARTMENTS: Department[] = [
+  { id: 'warehouse-a', name: 'Warehouse A' },
+  { id: 'production-floor', name: 'Production Floor' },
+  { id: 'shipping', name: 'Shipping Department' },
+  { id: 'receiving', name: 'Receiving Area' },
+];
+
+const MOCK_MHES: Mhe[] = [
+  { id: 'FL001', name: 'Forklift FL001 (Alpha)', departmentId: 'warehouse-a' },
+  { id: 'FL002', name: 'Forklift FL002 (Bravo)', departmentId: 'warehouse-a' },
+  { id: 'PJ001', name: 'Pallet Jack PJ001', departmentId: 'production-floor' },
+  { id: 'FL003', name: 'Forklift FL003 (Delta)', departmentId: 'shipping' },
+  { id: 'FL004', name: 'Forklift FL004 (Echo)', departmentId: 'production-floor' },
+  { id: 'RE001', name: 'Reach Truck RE001', departmentId: 'receiving' },
+];
+
 
 export default function InspectionPage() {
-  const [unitId, setUnitId] = useState('');
-  const [isUnitIdConfirmed, setIsUnitIdConfirmed] = useState(false);
+  const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('');
+  const [selectedMheId, setSelectedMheId] = useState<string>(''); // This will be our effective "unitId"
+  const [isInspectionSetupConfirmed, setIsInspectionSetupConfirmed] = useState(false);
+
   const [inspectionItems, setInspectionItems] = useState<InspectionRecordClientState[]>([]);
   const [currentItemIdToInspect, setCurrentItemIdToInspect] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -37,14 +68,12 @@ export default function InspectionPage() {
   const { toast } = useToast();
   const { user } = useAuth();
 
-  useEffect(() => {
-    if (isUnitIdConfirmed) {
-      resetInspectionState();
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isUnitIdConfirmed]);
+  const filteredMHEs = useMemo(() => {
+    if (!selectedDepartmentId) return [];
+    return MOCK_MHES.filter(mhe => mhe.departmentId === selectedDepartmentId);
+  }, [selectedDepartmentId]);
 
-  const resetInspectionState = (resetUnitId = false) => {
+  const resetInspectionState = useCallback((resetSelections = false) => {
     const initialItems = MOCK_CHECKLIST_ITEMS.map(item => ({
       checklistItemId: item.id,
       part_name: item.part_name,
@@ -59,11 +88,21 @@ export default function InspectionPage() {
     setCurrentItemIdToInspect(initialItems.length > 0 ? initialItems[0].checklistItemId : null);
     setShowUnsafeWarningDialog(false);
     setIsSubmittingReport(false);
-    if (resetUnitId) {
-      setUnitId('');
-      setIsUnitIdConfirmed(false);
+    if (resetSelections) {
+      setSelectedDepartmentId('');
+      setSelectedMheId('');
+      setIsInspectionSetupConfirmed(false);
     }
-  }
+  }, []);
+
+
+  useEffect(() => {
+    if (isInspectionSetupConfirmed) {
+      // Reset only checklist items, not department/MHE selection
+      resetInspectionState(false);
+    }
+  }, [isInspectionSetupConfirmed, resetInspectionState]);
+
 
   const completedItemsCount = useMemo(() => inspectionItems.filter(item => item.completed).length, [inspectionItems]);
   const totalItemsCount = MOCK_CHECKLIST_ITEMS.length;
@@ -86,13 +125,23 @@ export default function InspectionPage() {
     return MOCK_CHECKLIST_ITEMS.find(item => item.id === currentItemIdToInspect) || null;
   }, [currentItemIdToInspect]);
 
-  const handleConfirmUnitId = () => {
-    if (!unitId.trim()) {
-      toast({ title: "Error", description: "Please enter a Forklift Unit ID.", variant: "destructive"});
+  const handleStartInspectionSetup = () => {
+    if (!selectedDepartmentId) {
+      toast({ title: "Error", description: "Please select a Department.", variant: "destructive"});
       return;
     }
-    setIsUnitIdConfirmed(true);
+    if (!selectedMheId) {
+      toast({ title: "Error", description: "Please select an MHE ID.", variant: "destructive"});
+      return;
+    }
+    setIsInspectionSetupConfirmed(true);
   };
+  
+  const handleDepartmentChange = (deptId: string) => {
+    setSelectedDepartmentId(deptId);
+    setSelectedMheId(''); // Reset MHE when department changes
+  };
+
 
   const handleQrScanOrSelect = (itemId: string) => {
     const itemToInspect = MOCK_CHECKLIST_ITEMS.find(i => i.id === itemId);
@@ -128,7 +177,7 @@ export default function InspectionPage() {
   );
 
   const handleSubmitReport = async () => {
-    if (!isInspectionComplete || !user) return;
+    if (!isInspectionComplete || !user || !selectedMheId) return;
     setIsSubmittingReport(true);
 
     const overallStatus = hasUnsafeItems ? 'Unsafe' : 'Safe';
@@ -145,7 +194,7 @@ export default function InspectionPage() {
     }));
 
     const newReportAPIData: Omit<StoredInspectionReport, 'id'> = {
-      unitId: unitId,
+      unitId: selectedMheId, // Use the selected MHE ID as the unitId
       date: reportDate,
       operator: user.username,
       status: overallStatus,
@@ -178,12 +227,12 @@ export default function InspectionPage() {
 
       toast({
         title: "Report Submitted",
-        description: `Inspection report for Unit ID ${savedReport.unitId} has been saved to the server.`,
+        description: `Inspection report for MHE ID ${savedReport.unitId} has been saved to the server.`,
       });
 
       if (savedReport.status === 'Unsafe') {
         const firstUnsafeItem = savedReport.items.find(item => !item.is_safe);
-        let downtimeReason = `Forklift unit ${savedReport.unitId} deemed unsafe during inspection.`;
+        let downtimeReason = `MHE unit ${savedReport.unitId} deemed unsafe during inspection.`;
         if (firstUnsafeItem) {
           downtimeReason = `Unsafe item: ${firstUnsafeItem.part_name}.`;
           if (firstUnsafeItem.remarks) {
@@ -205,7 +254,6 @@ export default function InspectionPage() {
         });
 
         if(downtimeResponse.ok) {
-            // const savedDowntimeLog = await downtimeResponse.json(); // Assuming API returns saved log
             toast({
                 title: "Downtime Logged",
                 description: `Downtime automatically logged for unsafe unit ${savedReport.unitId} on the server.`,
@@ -223,7 +271,7 @@ export default function InspectionPage() {
             toast({title: "Downtime Log Error", description: downtimeError.message || "Failed to automatically log downtime.", variant: "destructive"})
         }
       }
-      resetInspectionState(true);
+      resetInspectionState(true); // Reset selections and items
 
     } catch (error) {
       console.error("Error submitting report to server:", error);
@@ -237,31 +285,56 @@ export default function InspectionPage() {
     }
   };
 
-  if (!isUnitIdConfirmed) {
+  if (!isInspectionSetupConfirmed) {
     return (
       <div className="space-y-8 flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
-        <Card className="w-full max-w-md shadow-lg">
+        <Card className="w-full max-w-lg shadow-lg">
           <CardHeader>
             <CardTitle className="font-headline text-2xl flex items-center">
               <Edit3 className="mr-3 h-7 w-7 text-primary" />
-              Enter Forklift Unit ID
+              Inspection Setup
             </CardTitle>
-            <CardDescription>Please provide the Unit ID for the forklift you are inspecting.</CardDescription>
+            <CardDescription>Please select the department and MHE ID for the equipment you are inspecting.</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="unitIdInput">Forklift Unit ID</Label>
-              <Input
-                id="unitIdInput"
-                type="text"
-                value={unitId}
-                onChange={(e) => setUnitId(e.target.value)}
-                placeholder="e.g., FL001"
-                className="mt-1 text-base"
-              />
+          <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="departmentSelect" className="flex items-center"><Warehouse className="mr-2 h-4 w-4 text-muted-foreground"/>Department</Label>
+              <Select value={selectedDepartmentId} onValueChange={handleDepartmentChange}>
+                <SelectTrigger id="departmentSelect" className="w-full text-base">
+                  <SelectValue placeholder="Select a department..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {MOCK_DEPARTMENTS.map(dept => (
+                    <SelectItem key={dept.id} value={dept.id} className="text-base py-2">
+                      {dept.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
-            <Button onClick={handleConfirmUnitId} size="lg" className="w-full text-base py-3">
-              Start Inspection for Unit {unitId || "ID"}
+
+            <div className="space-y-2">
+              <Label htmlFor="mheSelect" className="flex items-center"><TruckIcon className="mr-2 h-4 w-4 text-muted-foreground"/>MHE ID</Label>
+              <Select value={selectedMheId} onValueChange={setSelectedMheId} disabled={!selectedDepartmentId || filteredMHEs.length === 0}>
+                <SelectTrigger id="mheSelect" className="w-full text-base">
+                  <SelectValue placeholder={!selectedDepartmentId ? "Select department first" : "Select an MHE ID..."} />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredMHEs.length > 0 ? (
+                    filteredMHEs.map(mhe => (
+                      <SelectItem key={mhe.id} value={mhe.id} className="text-base py-2">
+                        {mhe.name} ({mhe.id})
+                      </SelectItem>
+                    ))
+                  ) : selectedDepartmentId ? (
+                     <div className="p-4 text-center text-sm text-muted-foreground">No MHEs found for this department.</div>
+                  ) : null}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <Button onClick={handleStartInspectionSetup} size="lg" className="w-full text-base py-3" disabled={!selectedDepartmentId || !selectedMheId}>
+              Start Inspection for {selectedMheId || "Selected MHE"}
             </Button>
           </CardContent>
         </Card>
@@ -269,19 +342,27 @@ export default function InspectionPage() {
     );
   }
 
+  // Rest of the inspection page (when isInspectionSetupConfirmed is true)
+  const selectedMheDetails = MOCK_MHES.find(mhe => mhe.id === selectedMheId);
+
   return (
     <div className="space-y-8">
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="font-headline text-3xl flex items-center">
             <ListChecks className="mr-3 h-8 w-8 text-primary" />
-            Forklift Inspection: Unit {unitId}
+            Inspection: {selectedMheDetails?.name || selectedMheId}
           </CardTitle>
           <CardDescription>
-            Complete all checklist items to ensure forklift safety.
+            Complete all checklist items to ensure equipment safety.
             {isInspectionComplete && " All items inspected."}
           </CardDescription>
         </CardHeader>
+        <CardContent>
+             <Button onClick={() => resetInspectionState(true)} variant="outline" size="sm">
+                Change Department/MHE
+            </Button>
+        </CardContent>
       </Card>
 
       {!isInspectionComplete ? (
@@ -291,7 +372,7 @@ export default function InspectionPage() {
           <Card className="shadow-md">
             <CardHeader>
               <CardTitle className="text-xl">Inspect Item</CardTitle>
-              <CardDescription>Select an item to inspect or simulate a QR code scan.</CardDescription>
+              <CardDescription>Select an item to inspect or simulate a QR code scan (using the dropdown). The selected item will pop up in a modal.</CardDescription>
             </CardHeader>
             <CardContent className="flex flex-col sm:flex-row items-center gap-4">
               <Select
@@ -363,7 +444,7 @@ export default function InspectionPage() {
                  <CheckCircle className="mx-auto h-16 w-16 text-green-500 mb-3" />
                )}
               <CardTitle className="font-headline text-2xl">
-                Inspection Complete for Unit {unitId}!
+                Inspection Complete for {selectedMheDetails?.name || selectedMheId}!
               </CardTitle>
               <CardDescription>
                 Overall Status: <span className={hasUnsafeItems ? "font-bold text-destructive" : "font-bold text-green-600"}>{hasUnsafeItems ? "UNSAFE" : "SAFE"}</span>.
@@ -376,10 +457,10 @@ export default function InspectionPage() {
                 {isSubmittingReport ? "Submitting..." : "Submit Report"}
               </Button>
               <Button onClick={() => resetInspectionState(true)} size="lg" variant="outline" className="w-full text-base py-3">
-                Start New Inspection (Different Unit)
+                Start New Inspection (Different MHE/Dept)
               </Button>
                <Button onClick={() => resetInspectionState(false)} size="lg" variant="outline" className="w-full text-base py-3">
-                Start New Inspection (Same Unit: {unitId})
+                Inspect Same MHE Again ({selectedMheDetails?.name || selectedMheId})
               </Button>
             </CardContent>
           </Card>
@@ -389,7 +470,7 @@ export default function InspectionPage() {
       <SafetyCheckModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        item={currentChecklistItemDetails}
+        item={currentChecklistItemDetails} // This still uses MOCK_CHECKLIST_ITEMS
         onSubmit={handleInspectionSubmitForItem}
       />
 
@@ -401,7 +482,7 @@ export default function InspectionPage() {
               Unsafe MHE Warning
             </AlertDialogTitle>
             <AlertDialogDescription className="pt-2">
-              Do not use the MHE report to supervisor.
+              This MHE has been marked as unsafe. Do not operate. Report to your supervisor immediately.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
