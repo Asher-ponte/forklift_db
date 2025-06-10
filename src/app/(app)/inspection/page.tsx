@@ -11,11 +11,21 @@ import type { ChecklistItem, InspectionRecordClientState } from '@/lib/mock-data
 import { useToast } from '@/hooks/use-toast';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ListChecks, ScanLine, AlertCircle, CheckCircle } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export default function InspectionPage() {
   const [inspectionItems, setInspectionItems] = useState<InspectionRecordClientState[]>([]);
   const [currentItemIdToInspect, setCurrentItemIdToInspect] = useState<string | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [showUnsafeWarningDialog, setShowUnsafeWarningDialog] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -33,12 +43,25 @@ export default function InspectionPage() {
       completed: false,
     }));
     setInspectionItems(initialItems);
-    setCurrentItemIdToInspect(initialItems.length > 0 ? initialItems[0].id : null);
+    setCurrentItemIdToInspect(initialItems.length > 0 ? initialItems[0].checklistItemId : null);
+    setShowUnsafeWarningDialog(false); // Reset dialog state
   }
 
   const completedItemsCount = useMemo(() => inspectionItems.filter(item => item.completed).length, [inspectionItems]);
   const totalItemsCount = MOCK_CHECKLIST_ITEMS.length;
-  const isInspectionComplete = completedItemsCount === totalItemsCount;
+  
+  const isInspectionComplete = useMemo(() => totalItemsCount > 0 && completedItemsCount === totalItemsCount, [completedItemsCount, totalItemsCount]);
+  
+  const hasUnsafeItems = useMemo(() => {
+    if (!isInspectionComplete) return false;
+    return inspectionItems.some(item => item.completed && item.is_safe === false);
+  }, [inspectionItems, isInspectionComplete]);
+
+  useEffect(() => {
+    if (isInspectionComplete && hasUnsafeItems) {
+      setShowUnsafeWarningDialog(true);
+    }
+  }, [isInspectionComplete, hasUnsafeItems]);
 
   const currentChecklistItemDetails = useMemo(() => {
     if (!currentItemIdToInspect) return null;
@@ -66,11 +89,25 @@ export default function InspectionPage() {
     );
     
     const nextUncompletedItem = inspectionItems.find(item => !item.completed && item.checklistItemId !== itemId);
-    if (nextUncompletedItem) {
-      setCurrentItemIdToInspect(nextUncompletedItem.checklistItemId);
-    } else if (inspectionItems.every(item => item.completed || item.checklistItemId === itemId)) { 
-      setCurrentItemIdToInspect(null); 
-    }
+    // Find the *next* item that isn't the one just submitted and isn't completed
+    // This needs to be based on the *updated* state, so we check against prevItems implicitly
+     setInspectionItems(currentItems => {
+        const updatedItems = currentItems.map(item =>
+            item.checklistItemId === itemId
+            ? { ...item, is_safe: isSafe, photo_url: photoUrl, timestamp: new Date().toISOString(), completed: true }
+            : item
+        );
+
+        const stillPendingItems = updatedItems.filter(i => !i.completed);
+        if (stillPendingItems.length > 0) {
+            setCurrentItemIdToInspect(stillPendingItems[0].checklistItemId);
+        } else {
+            setCurrentItemIdToInspect(null); // All items are completed
+        }
+        return updatedItems;
+    });
+
+
     setIsModalOpen(false);
   };
   
@@ -187,8 +224,22 @@ export default function InspectionPage() {
         item={currentChecklistItemDetails}
         onSubmit={handleInspectionSubmit}
       />
+
+      <AlertDialog open={showUnsafeWarningDialog} onOpenChange={setShowUnsafeWarningDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Unsafe MHE Warning</AlertDialogTitle>
+            <AlertDialogDescription>
+              Do not use the MHE report to supervisor.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction onClick={() => setShowUnsafeWarningDialog(false)}>
+              Acknowledge
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
-
-    
