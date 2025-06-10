@@ -246,7 +246,7 @@ export default function ReportPage() {
       <Card className="shadow-md">
         <CardContent className="p-0">
           <Accordion type="multiple" className="w-full">
-            {filteredData.length > 0 ? filteredData.map((report) => (
+            {filteredData.map((report) => (
               <AccordionItem value={report.id} key={report.id}>
                 <AccordionTrigger className="hover:bg-muted/50 w-full">
                   <Table className="w-full pointer-events-none"> {/* Make table non-interactive for trigger */}
@@ -337,19 +337,18 @@ export default function ReportPage() {
                   </div>
                 </AccordionContent>
               </AccordionItem>
-            )) : (
-              <AccordionItem value="no-data" disabled>
-                 <TableRow>
-                    <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
-                        No inspection records found matching your filters.
-                    </TableCell>
-                  </TableRow>
-              </AccordionItem>
-            )}
+            ))}
           </Accordion>
-          {/* Fallback for when filteredData is empty but accordion needs a child, or if map is empty */}
            {filteredData.length === 0 && (
-             <Table><TableBody><TableRow><TableCell colSpan={5} className="text-center py-10 text-muted-foreground">No inspection records found matching your filters.</TableCell></TableRow></TableBody></Table>
+             <Table>
+               <TableBody>
+                 <TableRow>
+                   <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
+                     No inspection records found matching your filters.
+                   </TableCell>
+                 </TableRow>
+               </TableBody>
+             </Table>
            )}
         </CardContent>
       </Card>
