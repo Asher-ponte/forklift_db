@@ -10,13 +10,13 @@ import { Truck, LayoutDashboard, ScanLine, FileText, Clock, Wrench, LogOut, Menu
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 
-const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/inspection', label: 'Inspection', icon: ScanLine },
-  { href: '/report', label: 'Forklift Report', icon: FileText },
-  { href: '/downtime', label: 'Downtime Log', icon: Clock },
-  { href: '/tools', label: 'Tools', icon: Wrench },
-  { href: '/data-management', label: 'Data Management', icon: Database },
+const allNavItems = [
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['operator', 'supervisor'] },
+  { href: '/inspection', label: 'Inspection', icon: ScanLine, roles: ['operator', 'supervisor'] },
+  { href: '/report', label: 'Forklift Report', icon: FileText, roles: ['operator', 'supervisor'] },
+  { href: '/downtime', label: 'Downtime Log', icon: Clock, roles: ['operator', 'supervisor'] },
+  { href: '/data-management', label: 'Data Management', icon: Database, roles: ['supervisor'] },
+  { href: '/tools', label: 'Tools', icon: Wrench, roles: ['operator', 'supervisor'] },
 ];
 
 export default function Navbar() {
@@ -29,6 +29,7 @@ export default function Navbar() {
     setIsClient(true);
   }, []);
 
+  const visibleNavItems = allNavItems.filter(item => user && item.roles.includes(user.role));
 
   const NavLink = ({ href, label, icon: Icon, onClick }: { href: string, label: string, icon: React.ElementType, onClick?: () => void }) => (
     <Link href={href} passHref>
@@ -61,7 +62,7 @@ export default function Navbar() {
 
   const renderNavLinks = (isMobile = false) => (
     <nav className={cn("flex flex-col gap-1 p-2", isMobile ? "mt-4" : "md:flex-row md:items-center md:gap-2 lg:gap-3")}>
-      {navItems.map((item) => (
+      {visibleNavItems.map((item) => (
         isMobile ? (
           <NavLink key={item.href} {...item} />
         ) : (
@@ -83,7 +84,7 @@ export default function Navbar() {
   );
 
   if (!isClient) {
-    return ( // Return a placeholder or skeleton during SSR/initial client render
+    return ( 
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-16 items-center justify-between">
           <div className="flex items-center">
@@ -92,7 +93,7 @@ export default function Navbar() {
           </div>
           <div className="h-8 w-8 bg-muted rounded-md animate-pulse md:hidden"></div>
           <div className="hidden md:flex items-center space-x-2">
-            {[...Array(navItems.length)].map((_, i) => <div key={i} className="h-8 w-24 bg-muted rounded-md animate-pulse"></div>)}
+            {[...Array(allNavItems.length)].map((_, i) => <div key={i} className="h-8 w-24 bg-muted rounded-md animate-pulse"></div>)}
             <div className="h-8 w-8 bg-muted rounded-full animate-pulse"></div>
           </div>
         </div>
@@ -109,7 +110,6 @@ export default function Navbar() {
           <span className="ml-2 font-headline text-xl font-semibold">ForkLift Check</span>
         </Link>
 
-        {/* Desktop Navigation */}
         <div className="hidden md:flex items-center">
           {renderNavLinks(false)}
           <Button variant="ghost" size="icon" onClick={logout} className="ml-2 text-muted-foreground hover:text-destructive">
@@ -119,7 +119,6 @@ export default function Navbar() {
         </div>
         
 
-        {/* Mobile Navigation */}
         <div className="md:hidden">
           <Sheet open={isMobileMenuOpen} onOpenChange={setIsMobileMenuOpen}>
             <SheetTrigger asChild>
