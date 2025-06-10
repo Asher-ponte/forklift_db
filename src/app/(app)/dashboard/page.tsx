@@ -56,7 +56,6 @@ export default function DashboardPage() {
         } else if (responseData && Array.isArray(responseData.data)) {
           reportsArray = responseData.data;
         } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
-          // Handle case where API returns an empty object {} for no reports
           reportsArray = [];
         }
 
@@ -86,7 +85,6 @@ export default function DashboardPage() {
         } else if (responseData && Array.isArray(responseData.data)) {
           downtimeArray = responseData.data;
         } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
-           // Handle case where API returns an empty object {} for no logs
           downtimeArray = [];
         }
 
@@ -141,8 +139,20 @@ export default function DashboardPage() {
       }));
 
     } catch (error) {
-      console.error("Failed to load dashboard data from API:", error);
-      toast({ title: "Dashboard Load Error", description: (error instanceof Error) ? error.message : "An unexpected error occurred.", variant: "destructive" });
+      let description = "An unexpected error occurred while trying to connect to the backend API.";
+      if (error instanceof Error) {
+        description = error.message;
+        if (error.message.toLowerCase().includes('failed to fetch')) {
+          const localIpPattern = /^(http:\/\/)?(localhost|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)/;
+          if (apiBaseUrl && localIpPattern.test(apiBaseUrl)) {
+            description = `Failed to connect to the API server at ${apiBaseUrl}. Please ensure your XAMPP/PHP server is running, accessible on your network, and your firewall is not blocking connections. Original error: ${error.message}`;
+          } else {
+            description = `Failed to fetch data from the API. Please check your network connection and the server status. Original error: ${error.message}`;
+          }
+        }
+      }
+      console.error("Failed to load dashboard data from API:", error, "Attempted API Base URL:", apiBaseUrl);
+      toast({ title: "Dashboard Load Error", description, variant: "destructive", duration: 10000 });
       setAllReports([]);
       setAllDowntimeLogs([]);
       setStats(prevStats => ({
