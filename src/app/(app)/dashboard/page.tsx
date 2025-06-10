@@ -11,9 +11,10 @@ import { useAuth } from '@/context/AuthContext';
 import { Input } from '@/components/ui/input';
 import { CheckCircle, AlertTriangle, Clock, ScanLine, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
-import type { StoredInspectionReport } from '@/lib/types';
+import type { StoredInspectionReport, StoredDowntimeLog } from '@/lib/types';
 
 const LOCAL_STORAGE_REPORTS_KEY = 'forkliftInspectionReports';
+const LOCAL_STORAGE_DOWNTIME_KEY = 'forkliftDowntimeLogs';
 
 interface DashboardStats {
   totalInspectionsToday: number;
@@ -31,6 +32,7 @@ export default function DashboardPage() {
     upcomingInspections: 3, // Mock data
   });
   const [allReports, setAllReports] = useState<StoredInspectionReport[]>([]);
+  const [allDowntimeLogs, setAllDowntimeLogs] = useState<StoredDowntimeLog[]>([]);
   const [selectedUnitId, setSelectedUnitId] = useState('');
   const [isLoading, setIsLoading] = useState(true);
 
@@ -40,12 +42,16 @@ export default function DashboardPage() {
     const reports: StoredInspectionReport[] = storedReportsRaw ? JSON.parse(storedReportsRaw) : [];
     setAllReports(reports);
 
+    const storedDowntimeLogsRaw = localStorage.getItem(LOCAL_STORAGE_DOWNTIME_KEY);
+    const downtimeLogs: StoredDowntimeLog[] = storedDowntimeLogsRaw ? JSON.parse(storedDowntimeLogsRaw) : [];
+    setAllDowntimeLogs(downtimeLogs);
+
     const today = new Date().toISOString().split('T')[0];
     const todayReports = reports.filter(report => report.date.startsWith(today));
 
     let safeTodayCount = 0;
     let unsafeTodayCount = 0;
-    const unitsProcessedToday = new Set<string>();
+    
     const latestReportForUnitToday: Record<string, StoredInspectionReport> = {};
 
     // Get the latest report for each unit inspected today
@@ -65,7 +71,7 @@ export default function DashboardPage() {
     
     setStats(prevStats => ({
       ...prevStats,
-      totalInspectionsToday: todayReports.length,
+      totalInspectionsToday: todayReports.length, // This counts all inspections today, not unique units
       safeForkliftsToday: safeTodayCount,
       unsafeForkliftsToday: unsafeTodayCount,
     }));
@@ -143,7 +149,7 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2">
         <DailyHitRateChart reports={allReports} />
-        <DowntimeOverviewChart />
+        <DowntimeOverviewChart downtimeLogs={allDowntimeLogs} />
       </div>
 
       <Card className="shadow-md">
