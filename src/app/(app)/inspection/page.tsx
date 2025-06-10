@@ -24,8 +24,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-// We won't use client-side uuid v4 anymore if backend generates IDs.
-// import { v4 as uuidv4 } from 'uuid';
+
 
 export default function InspectionPage() {
   const [unitId, setUnitId] = useState('');
@@ -68,9 +67,9 @@ export default function InspectionPage() {
 
   const completedItemsCount = useMemo(() => inspectionItems.filter(item => item.completed).length, [inspectionItems]);
   const totalItemsCount = MOCK_CHECKLIST_ITEMS.length;
-  
+
   const isInspectionComplete = useMemo(() => totalItemsCount > 0 && completedItemsCount === totalItemsCount, [completedItemsCount, totalItemsCount]);
-  
+
   const hasUnsafeItems = useMemo(() => {
     if (!isInspectionComplete) return false;
     return inspectionItems.some(item => item.completed && item.is_safe === false);
@@ -117,14 +116,14 @@ export default function InspectionPage() {
         if (stillPendingItems.length > 0) {
             setCurrentItemIdToInspect(stillPendingItems[0].checklistItemId);
         } else {
-            setCurrentItemIdToInspect(null); 
+            setCurrentItemIdToInspect(null);
         }
         return updatedItems;
     });
     setIsModalOpen(false);
   };
-  
-  const availableItemsToInspect = MOCK_CHECKLIST_ITEMS.filter(mItem => 
+
+  const availableItemsToInspect = MOCK_CHECKLIST_ITEMS.filter(mItem =>
     !inspectionItems.find(iItem => iItem.checklistItemId === mItem.id)?.completed
   );
 
@@ -134,8 +133,7 @@ export default function InspectionPage() {
 
     const overallStatus = hasUnsafeItems ? 'Unsafe' : 'Safe';
     const reportDate = new Date().toISOString();
-    
-    // Prepare report data, excluding client-side 'completed' and potentially other fields not in DB schema for items
+
     const reportItemsForAPI = inspectionItems.map(item => ({
       checklistItemId: item.checklistItemId,
       part_name: item.part_name,
@@ -146,13 +144,12 @@ export default function InspectionPage() {
       remarks: item.remarks,
     }));
 
-
-    const newReportAPIData: Omit<StoredInspectionReport, 'id'> = { // Assuming backend generates 'id' for the report
+    const newReportAPIData: Omit<StoredInspectionReport, 'id'> = {
       unitId: unitId,
       date: reportDate,
       operator: user.username,
       status: overallStatus,
-      items: reportItemsForAPI, 
+      items: reportItemsForAPI,
     };
 
     try {
@@ -166,11 +163,18 @@ export default function InspectionPage() {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Failed to submit report to server.'}));
+        const contentType = response.headers.get("content-type");
+        let errorData;
+        if (contentType && contentType.includes("application/json")) {
+          errorData = await response.json().catch(() => ({ message: 'Failed to parse JSON error response from server.' }));
+        } else {
+          const textError = await response.text().catch(() => 'Unknown server error, non-JSON response from server.');
+          errorData = { message: `Server error submitting report (non-JSON): ${textError.substring(0, 200)}... Contact backend admin.` };
+        }
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
-      
-      const savedReport: StoredInspectionReport = await response.json(); // Assuming backend returns the saved report with an ID
+
+      const savedReport: StoredInspectionReport = await response.json();
 
       toast({
         title: "Report Submitted",
@@ -187,13 +191,13 @@ export default function InspectionPage() {
           }
         }
 
-        const newDowntimeLogAPIData: Omit<StoredDowntimeLog, 'id' | 'endTime'> = { // Backend generates ID, endTime is null initially
+        const newDowntimeLogAPIData: Omit<StoredDowntimeLog, 'id' | 'endTime'> = {
           unitId: savedReport.unitId,
           reason: downtimeReason,
-          startTime: reportDate, 
-          loggedAt: reportDate, 
+          startTime: reportDate,
+          loggedAt: reportDate,
         };
-        
+
         const downtimeResponse = await fetch(`${apiBaseUrl}/downtime_logs.php`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json'},
@@ -201,18 +205,26 @@ export default function InspectionPage() {
         });
 
         if(downtimeResponse.ok) {
+            // const savedDowntimeLog = await downtimeResponse.json(); // Assuming API returns saved log
             toast({
                 title: "Downtime Logged",
                 description: `Downtime automatically logged for unsafe unit ${savedReport.unitId} on the server.`,
-                variant: "default" 
+                variant: "default"
             });
         } else {
-            const downtimeError = await downtimeResponse.json().catch(() => ({ message: 'Failed to log downtime.'}));
+            const contentType = downtimeResponse.headers.get("content-type");
+            let downtimeError;
+            if (contentType && contentType.includes("application/json")) {
+                downtimeError = await downtimeResponse.json().catch(() => ({ message: 'Failed to parse JSON error for downtime log.'}));
+            } else {
+                const textError = await downtimeResponse.text().catch(() => 'Unknown server error for downtime log.');
+                downtimeError = { message: `Downtime log server error (non-JSON): ${textError.substring(0,200)}... Contact backend admin.`};
+            }
             toast({title: "Downtime Log Error", description: downtimeError.message || "Failed to automatically log downtime.", variant: "destructive"})
         }
       }
-      resetInspectionState(true); // Reset for a new inspection
-      
+      resetInspectionState(true);
+
     } catch (error) {
       console.error("Error submitting report to server:", error);
       toast({
@@ -266,7 +278,7 @@ export default function InspectionPage() {
             Forklift Inspection: Unit {unitId}
           </CardTitle>
           <CardDescription>
-            Complete all checklist items to ensure forklift safety. 
+            Complete all checklist items to ensure forklift safety.
             {isInspectionComplete && " All items inspected."}
           </CardDescription>
         </CardHeader>
@@ -275,7 +287,7 @@ export default function InspectionPage() {
       {!isInspectionComplete ? (
         <>
           <CompletionProgress completedItems={completedItemsCount} totalItems={totalItemsCount} />
-          
+
           <Card className="shadow-md">
             <CardHeader>
               <CardTitle className="text-xl">Inspect Item</CardTitle>
@@ -304,8 +316,8 @@ export default function InspectionPage() {
                   )}
                 </SelectContent>
               </Select>
-              <Button 
-                onClick={() => currentItemIdToInspect && handleQrScanOrSelect(currentItemIdToInspect)} 
+              <Button
+                onClick={() => currentItemIdToInspect && handleQrScanOrSelect(currentItemIdToInspect)}
                 disabled={!currentItemIdToInspect || isModalOpen || availableItemsToInspect.length === 0}
                 size="lg"
                 className="w-full sm:w-auto text-base py-3"

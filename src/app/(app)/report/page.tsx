@@ -19,17 +19,17 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion"
 import { cn } from "@/lib/utils";
-import { useToast } from "@/hooks/use-toast"; // Import useToast
+import { useToast } from "@/hooks/use-toast";
 
 interface ReportDisplayEntry {
   id: string;
   unitId: string;
-  date: string; 
+  date: string;
   operator: string;
   status: 'Safe' | 'Unsafe';
-  representativePhotoUrl: string; 
+  representativePhotoUrl: string;
   representativeDataAiHint: string;
-  rawDate: Date; 
+  rawDate: Date;
   items: InspectionRecordClientState[];
 }
 
@@ -38,7 +38,7 @@ export default function ReportPage() {
   const [filterUnitId, setFilterUnitId] = useState('');
   const [filterDateRange, setFilterDateRange] = useState<{ from: string, to: string }>({ from: '', to: '' });
   const [isLoading, setIsLoading] = useState(true);
-  const { toast } = useToast(); // Initialize toast
+  const { toast } = useToast();
 
   const processApiReportsToDisplayEntries = (reportsFromApi: StoredInspectionReport[]): ReportDisplayEntry[] => {
     return reportsFromApi.map(report => {
@@ -70,49 +70,55 @@ export default function ReportPage() {
         representativePhotoUrl: representativePhoto,
         representativeDataAiHint: hint.substring(0,50),
         rawDate: new Date(report.date),
-        items: report.items || [], // Ensure items is an array
+        items: report.items || [],
       };
     }).sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
   };
-  
+
   const loadReportsFromAPI = useCallback(async () => {
     setIsLoading(true);
     try {
       const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-      // Construct query parameters for filtering if they exist
       const queryParams = new URLSearchParams();
       if (filterUnitId) queryParams.append('unitId', filterUnitId);
       if (filterDateRange.from) queryParams.append('dateFrom', new Date(filterDateRange.from).toISOString());
       if (filterDateRange.to) {
         const toDate = new Date(filterDateRange.to);
-        toDate.setHours(23, 59, 59, 999); // Ensure "to" date includes the whole day
+        toDate.setHours(23, 59, 59, 999);
         queryParams.append('dateTo', toDate.toISOString());
       }
-      
+
       const response = await fetch(`${apiBaseUrl}/inspection_reports.php?${queryParams.toString()}`);
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Failed to fetch reports from server.'}));
+        const contentType = response.headers.get("content-type");
+        let errorData;
+        if (contentType && contentType.includes("application/json")) {
+          errorData = await response.json().catch(() => ({ message: 'Failed to parse JSON error response from server.' }));
+        } else {
+          const textError = await response.text().catch(() => 'Unknown server error, non-JSON response from server.');
+          errorData = { message: `Server error (non-JSON): ${textError.substring(0, 200)}... Contact backend administrator.` };
+        }
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
+
       const reportsFromAPI: StoredInspectionReport[] = await response.json();
-      
+
       if (!Array.isArray(reportsFromAPI)) {
         console.error("API did not return an array for reports:", reportsFromAPI);
-        throw new Error("Invalid data format received from server.");
+        throw new Error("Invalid data format received from server. Expected an array.");
       }
 
       setAllReports(processApiReportsToDisplayEntries(reportsFromAPI));
-      
+
     } catch (error) {
       console.error("Failed to fetch reports:", error);
-      toast({ title: "Error Loading Reports", description: (error instanceof Error) ? error.message : "Could not fetch reports.", variant: "destructive" });
-      setAllReports([]); 
+      toast({ title: "Error Loading Reports", description: (error instanceof Error) ? error.message : "Could not fetch reports from the server.", variant: "destructive" });
+      setAllReports([]);
     } finally {
       setIsLoading(false);
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [toast]); // Removed filters from dependencies, manual refresh/filter application will call this
+  }, [toast, filterUnitId, filterDateRange.from, filterDateRange.to]);
 
 
   useEffect(() => {
@@ -120,62 +126,12 @@ export default function ReportPage() {
   }, [loadReportsFromAPI]);
 
   const handleFilterAndRefresh = () => {
-    // This function will be called by the refresh button
-    // It will use the current filter states to fetch data
-    // To make it effective, we would need to pass filterUnitId and filterDateRange
-    // to loadReportsFromAPI or make loadReportsFromAPI directly use these state variables.
-    // For simplicity now, the loadReportsFromAPI is designed to be called on mount and manual refresh.
-    // We need loadReportsFromAPI to re-evaluate filters when called.
-    // Let's adjust loadReportsFromAPI to take filters or make useEffect depend on them.
-    // For now, just calling it will use the latest state values if it's defined outside useEffect scope or passed.
-    // Making loadReportsFromAPI depend on filters directly in its definition and useEffect.
-    setIsLoading(true);
-    const fetchWithFilters = async () => {
-        try {
-            const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-            const queryParams = new URLSearchParams();
-            if (filterUnitId) queryParams.append('unitId', filterUnitId);
-            if (filterDateRange.from) queryParams.append('dateFrom', new Date(filterDateRange.from).toISOString());
-            if (filterDateRange.to) {
-                const toDate = new Date(filterDateRange.to);
-                toDate.setHours(23, 59, 59, 999);
-                queryParams.append('dateTo', toDate.toISOString());
-            }
-            
-            const response = await fetch(`${apiBaseUrl}/inspection_reports.php?${queryParams.toString()}`);
-            if (!response.ok) {
-                const errorData = await response.json().catch(() => ({ message: 'Failed to fetch reports.' }));
-                throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-            }
-            const reportsFromAPI: StoredInspectionReport[] = await response.json();
-            if (!Array.isArray(reportsFromAPI)) {
-                console.error("API did not return an array for reports:", reportsFromAPI);
-                throw new Error("Invalid data format received from server.");
-            }
-            setAllReports(processApiReportsToDisplayEntries(reportsFromAPI));
-        } catch (error) {
-            console.error("Failed to fetch reports with filters:", error);
-            toast({ title: "Error Filtering Reports", description: (error instanceof Error) ? error.message : "Could not apply filters.", variant: "destructive" });
-        } finally {
-            setIsLoading(false);
-        }
-    };
-    fetchWithFilters();
+    loadReportsFromAPI();
   };
 
 
   const filteredData = useMemo(() => {
-    // Client-side filtering is removed as filtering is now intended to be done by API
-    // However, if API doesn't support all filtering or for instant UI updates,
-    // client-side filtering can be re-added here based on `allReports`
-    return allReports; // Assuming API returns pre-filtered data based on query params
-                      // Or if API returns all, and we filter client-side:
-    // return allReports.filter(entry => {
-    //   const unitFilterMatch = filterUnitId ? entry.unitId.toLowerCase().includes(filterUnitId.toLowerCase()) : true;
-    //   let dateFilterMatch = true;
-    //   // ... (client-side date filtering logic if needed) ...
-    //   return unitFilterMatch && dateFilterMatch;
-    // });
+    return allReports;
   }, [allReports]);
 
 
@@ -188,7 +144,7 @@ export default function ReportPage() {
         const row = [
           report.id,
           report.unitId,
-          report.date, // This is already formatted: new Date(report.date).toLocaleString()
+          report.date,
           report.operator,
           report.status,
           item.part_name,
@@ -196,10 +152,10 @@ export default function ReportPage() {
           item.timestamp ? new Date(item.timestamp).toLocaleString() : 'N/A',
           item.remarks || '',
           item.photo_url || ''
-        ].map(field => `"${String(field).replace(/"/g, '""')}"`); 
+        ].map(field => `"${String(field).replace(/"/g, '""')}"`);
         csvRows.push(row.join(','));
       });
-       if (!report.items || report.items.length === 0) { 
+       if (!report.items || report.items.length === 0) {
         const row = [
           report.id,
           report.unitId,
@@ -357,7 +313,7 @@ export default function ReportPage() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {report.items.map((item, idx) => ( // Added idx for key if checklistItemId is not unique enough across reports
+                            {report.items.map((item, idx) => (
                               <TableRow key={`${report.id}-item-${item.checklistItemId}-${idx}`}>
                                 <TableCell className="font-medium">{item.part_name}</TableCell>
                                 <TableCell>
@@ -379,7 +335,7 @@ export default function ReportPage() {
                                   )}
                                 </TableCell>
                                 <TableCell className="text-center">
-                                  {item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL && !item.photo_url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP") ? ( // Check for actual photo
+                                  {item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL && !item.photo_url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP") ? (
                                     <Image
                                       src={item.photo_url}
                                       alt={item.part_name}
