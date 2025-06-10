@@ -36,11 +36,11 @@ export default function DowntimePage() {
             logs = parsedData;
           } else {
             console.warn("Downtime logs in localStorage was not an array, resetting.");
-            localStorage.setItem(LOCAL_STORAGE_DOWNTIME_KEY, JSON.stringify([])); 
+            localStorage.setItem(LOCAL_STORAGE_DOWNTIME_KEY, JSON.stringify([]));
           }
         } catch (parseError) {
           console.error("Error parsing downtime logs from localStorage:", parseError);
-          localStorage.removeItem(LOCAL_STORAGE_DOWNTIME_KEY); 
+          localStorage.removeItem(LOCAL_STORAGE_DOWNTIME_KEY);
           toast({
             title: "Data Error",
             description: "Downtime log data was corrupted and has been cleared. Please refresh.",
@@ -48,34 +48,35 @@ export default function DowntimePage() {
           });
         }
       }
-      
-      const validLogs = logs.filter(log => 
-        log && typeof log.id === 'string' && typeof log.unitId === 'string' && 
+
+      const validLogs = logs.filter(log =>
+        log && typeof log.id === 'string' && typeof log.unitId === 'string' &&
         typeof log.reason === 'string' && typeof log.startTime === 'string' &&
         typeof log.loggedAt === 'string' && (log.endTime === null || typeof log.endTime === 'string' || typeof log.endTime === 'undefined')
       );
 
       if (validLogs.length !== logs.length) {
         console.warn("Some downtime log entries were invalid and have been filtered out.");
-        // To prevent data loss of potentially recoverable items, we don't auto-save back here.
-        // The user can fix or the system will work with the valid ones.
       }
-      
+
       validLogs.sort((a, b) => {
-          const dateA = new Date(a.loggedAt).getTime();
-          const dateB = new Date(b.loggedAt).getTime();
-          if (isNaN(dateA) && isNaN(dateB)) return 0;
-          if (isNaN(dateA)) return 1; 
-          if (isNaN(dateB)) return -1;
-          return dateB - dateA;
+          let dateAVal: number, dateBVal: number;
+          try { dateAVal = new Date(a.loggedAt).getTime(); } catch { dateAVal = NaN; }
+          try { dateBVal = new Date(b.loggedAt).getTime(); } catch { dateBVal = NaN; }
+
+          if (isNaN(dateAVal) && isNaN(dateBVal)) return 0;
+          if (isNaN(dateAVal)) return 1;
+          if (isNaN(dateBVal)) return -1;
+          return dateBVal - dateAVal;
         });
       setDowntimeLogs(validLogs);
+
     } catch (error) {
-      console.error("An unexpected error occurred while loading downtime logs:", error);
-      setDowntimeLogs([]); 
+      console.error("An unexpected error occurred while loading or processing downtime logs:", error);
+      setDowntimeLogs([]); // Reset to a safe state
       toast({
         title: "Loading Error",
-        description: "An unexpected error occurred while loading downtime logs.",
+        description: "An unexpected error occurred while loading downtime logs. Displaying empty list.",
         variant: "destructive",
       });
     } finally {
@@ -92,34 +93,41 @@ export default function DowntimePage() {
     try {
       const date = new Date(isoString);
       if (isNaN(date.getTime())) {
-          return 'Invalid Date';
+        console.warn(`Invalid date string encountered in formatDateTime: ${isoString}`);
+        return 'Invalid Date';
       }
       return date.toLocaleString();
     } catch (e) {
-      return 'Invalid Date';
+      console.error(`Error formatting date string: ${isoString}`, e);
+      return 'Error Date';
     }
   };
 
   const handleOpenEditEndTimeModal = (log: StoredDowntimeLog) => {
     setSelectedLogForEdit(log);
-    const now = new Date();
-    const offset = now.getTimezoneOffset() * 60000;
-    const localISOTime = (new Date(now.getTime() - offset)).toISOString().slice(0,16);
-    
-    let defaultEndTime = localISOTime;
-    if (log.endTime) {
+    let initialEndTime = '';
+
+    if (log.endTime && typeof log.endTime === 'string') {
         try {
-            // Ensure log.endTime is valid and can be formatted, otherwise use current time
-            const existingEndDate = new Date(log.endTime);
-            if (!isNaN(existingEndDate.getTime())) {
-                 const existingEndTimeOffset = existingEndDate.getTimezoneOffset() * 60000;
-                 defaultEndTime = (new Date(existingEndDate.getTime() - existingEndTimeOffset)).toISOString().slice(0,16);
+            const d = new Date(log.endTime);
+            if (!isNaN(d.getTime())) {
+                const offset = d.getTimezoneOffset() * 60000;
+                initialEndTime = new Date(d.getTime() - offset).toISOString().slice(0, 16);
+            } else {
+                 console.warn(`Invalid log.endTime for input: ${log.endTime}`);
             }
         } catch (e) {
-            // if log.endTime is not a valid date string, use current time
+            console.error(`Error processing log.endTime for input: ${log.endTime}`, e);
         }
     }
-    setCurrentEditingEndTime(defaultEndTime);
+
+    if (!initialEndTime) {
+        const now = new Date();
+        const offset = now.getTimezoneOffset() * 60000;
+        initialEndTime = new Date(now.getTime() - offset).toISOString().slice(0, 16);
+    }
+    
+    setCurrentEditingEndTime(initialEndTime);
     setIsEndTimeModalOpen(true);
   };
 
@@ -129,16 +137,28 @@ export default function DowntimePage() {
       return;
     }
 
-    const storedLogsRaw = localStorage.getItem(LOCAL_STORAGE_DOWNTIME_KEY);
-    let logs: StoredDowntimeLog[] = storedLogsRaw ? JSON.parse(storedLogsRaw) : []; // Re-parse to be safe
+    let logs: StoredDowntimeLog[] = [];
+    try {
+        const storedLogsRaw = localStorage.getItem(LOCAL_STORAGE_DOWNTIME_KEY);
+        const parsedData = storedLogsRaw ? JSON.parse(storedLogsRaw) : [];
+        if (Array.isArray(parsedData)) {
+            logs = parsedData;
+        } else {
+             throw new Error("Stored downtime logs are not an array.");
+        }
+    } catch (error) {
+        console.error("Error reading downtime logs for update:", error);
+        toast({ title: "Error", description: "Could not read existing logs to update. Please refresh.", variant: "destructive" });
+        return;
+    }
     
-    logs = logs.map(log => 
-      log.id === selectedLogForEdit.id 
-        ? { ...log, endTime: currentEditingEndTime } 
+    const updatedLogs = logs.map(log =>
+      log.id === selectedLogForEdit.id
+        ? { ...log, endTime: currentEditingEndTime }
         : log
     );
 
-    localStorage.setItem(LOCAL_STORAGE_DOWNTIME_KEY, JSON.stringify(logs));
+    localStorage.setItem(LOCAL_STORAGE_DOWNTIME_KEY, JSON.stringify(updatedLogs));
     toast({ title: "Success", description: `End time updated for unit ${selectedLogForEdit.unitId}.` });
     
     loadDowntimeLogs(); // Refresh the list
@@ -241,4 +261,3 @@ export default function DowntimePage() {
     </div>
   );
 }
-
