@@ -26,12 +26,62 @@ export default function DowntimePage() {
 
   const loadDowntimeLogs = useCallback(() => {
     setIsLoading(true);
-    const storedLogsRaw = localStorage.getItem(LOCAL_STORAGE_DOWNTIME_KEY);
-    const logs: StoredDowntimeLog[] = storedLogsRaw ? JSON.parse(storedLogsRaw) : [];
-    logs.sort((a, b) => new Date(b.loggedAt).getTime() - new Date(a.loggedAt).getTime());
-    setDowntimeLogs(logs);
-    setIsLoading(false);
-  }, []);
+    try {
+      const storedLogsRaw = localStorage.getItem(LOCAL_STORAGE_DOWNTIME_KEY);
+      let logs: StoredDowntimeLog[] = [];
+      if (storedLogsRaw) {
+        try {
+          const parsedData = JSON.parse(storedLogsRaw);
+          if (Array.isArray(parsedData)) {
+            logs = parsedData;
+          } else {
+            console.warn("Downtime logs in localStorage was not an array, resetting.");
+            localStorage.setItem(LOCAL_STORAGE_DOWNTIME_KEY, JSON.stringify([])); 
+          }
+        } catch (parseError) {
+          console.error("Error parsing downtime logs from localStorage:", parseError);
+          localStorage.removeItem(LOCAL_STORAGE_DOWNTIME_KEY); 
+          toast({
+            title: "Data Error",
+            description: "Downtime log data was corrupted and has been cleared. Please refresh.",
+            variant: "destructive",
+          });
+        }
+      }
+      
+      const validLogs = logs.filter(log => 
+        log && typeof log.id === 'string' && typeof log.unitId === 'string' && 
+        typeof log.reason === 'string' && typeof log.startTime === 'string' &&
+        typeof log.loggedAt === 'string' && (log.endTime === null || typeof log.endTime === 'string' || typeof log.endTime === 'undefined')
+      );
+
+      if (validLogs.length !== logs.length) {
+        console.warn("Some downtime log entries were invalid and have been filtered out.");
+        // To prevent data loss of potentially recoverable items, we don't auto-save back here.
+        // The user can fix or the system will work with the valid ones.
+      }
+      
+      validLogs.sort((a, b) => {
+          const dateA = new Date(a.loggedAt).getTime();
+          const dateB = new Date(b.loggedAt).getTime();
+          if (isNaN(dateA) && isNaN(dateB)) return 0;
+          if (isNaN(dateA)) return 1; 
+          if (isNaN(dateB)) return -1;
+          return dateB - dateA;
+        });
+      setDowntimeLogs(validLogs);
+    } catch (error) {
+      console.error("An unexpected error occurred while loading downtime logs:", error);
+      setDowntimeLogs([]); 
+      toast({
+        title: "Loading Error",
+        description: "An unexpected error occurred while loading downtime logs.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }, [toast]);
 
   useEffect(() => {
     loadDowntimeLogs();
@@ -40,7 +90,11 @@ export default function DowntimePage() {
   const formatDateTime = (isoString: string | null | undefined) => {
     if (!isoString) return 'N/A';
     try {
-      return new Date(isoString).toLocaleString();
+      const date = new Date(isoString);
+      if (isNaN(date.getTime())) {
+          return 'Invalid Date';
+      }
+      return date.toLocaleString();
     } catch (e) {
       return 'Invalid Date';
     }
@@ -48,12 +102,24 @@ export default function DowntimePage() {
 
   const handleOpenEditEndTimeModal = (log: StoredDowntimeLog) => {
     setSelectedLogForEdit(log);
-    // If endTime is null or empty, provide a default or leave it empty for user input
-    // For datetime-local, it expects "yyyy-MM-ddThh:mm"
     const now = new Date();
     const offset = now.getTimezoneOffset() * 60000;
     const localISOTime = (new Date(now.getTime() - offset)).toISOString().slice(0,16);
-    setCurrentEditingEndTime(log.endTime || localISOTime);
+    
+    let defaultEndTime = localISOTime;
+    if (log.endTime) {
+        try {
+            // Ensure log.endTime is valid and can be formatted, otherwise use current time
+            const existingEndDate = new Date(log.endTime);
+            if (!isNaN(existingEndDate.getTime())) {
+                 const existingEndTimeOffset = existingEndDate.getTimezoneOffset() * 60000;
+                 defaultEndTime = (new Date(existingEndDate.getTime() - existingEndTimeOffset)).toISOString().slice(0,16);
+            }
+        } catch (e) {
+            // if log.endTime is not a valid date string, use current time
+        }
+    }
+    setCurrentEditingEndTime(defaultEndTime);
     setIsEndTimeModalOpen(true);
   };
 
@@ -64,7 +130,7 @@ export default function DowntimePage() {
     }
 
     const storedLogsRaw = localStorage.getItem(LOCAL_STORAGE_DOWNTIME_KEY);
-    let logs: StoredDowntimeLog[] = storedLogsRaw ? JSON.parse(storedLogsRaw) : [];
+    let logs: StoredDowntimeLog[] = storedLogsRaw ? JSON.parse(storedLogsRaw) : []; // Re-parse to be safe
     
     logs = logs.map(log => 
       log.id === selectedLogForEdit.id 
