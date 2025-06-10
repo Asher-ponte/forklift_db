@@ -121,7 +121,7 @@ export default function DataManagementPage() {
         throw new Error(`Failed to fetch departments: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
       }
       const data = await response.json();
-      console.log('Fetched Departments Data:', data);
+      console.log('Fetched Departments Data:', JSON.stringify(data, null, 2));
       setDepartments(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error in fetchDepartments:', error);
@@ -147,7 +147,7 @@ export default function DataManagementPage() {
         throw new Error(`Failed to fetch MHE units: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
       }
       const data: MheUnit[] = await response.json();
-      console.log('Fetched MHE Units Data:', data);
+      console.log('Fetched MHE Units Data:', JSON.stringify(data, null, 2));
       const enhancedData = Array.isArray(data) ? data.map(mhe => ({
         ...mhe,
         department_name: departments.find(d => d.id === mhe.department_id)?.name || 'N/A'
@@ -177,7 +177,7 @@ export default function DataManagementPage() {
         throw new Error(`Failed to fetch checklist items: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
       }
       const data = await response.json();
-      console.log('Fetched Checklist Items Data:', data);
+      console.log('Fetched Checklist Items Data:', JSON.stringify(data, null, 2));
       setChecklistItems(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error in fetchChecklistItems:', error);
@@ -197,12 +197,8 @@ export default function DataManagementPage() {
   }, [user, fetchDepartments, fetchChecklistItems]);
   
   useEffect(() => {
-    if (user?.role === 'supervisor' && !isLoadingDepartments && departments.length > 0) {
+    if (user?.role === 'supervisor' && !isLoadingDepartments && departments.length >= 0) { // Fetch MHE even if departments list is empty initially
          fetchMheUnits();
-    } else if (user?.role === 'supervisor' && !isLoadingDepartments && departments.length === 0) {
-        // If there are no departments, we might still want to fetch MHE units (they might not have a department_id)
-        // Or at least ensure loadingMHEUnits is set to false
-        fetchMheUnits(); // Or just setIsLoadingMheUnits(false); if no departments means no MHE units can be meaningfully displayed
     }
   }, [user, fetchMheUnits, isLoadingDepartments, departments.length]);
 
