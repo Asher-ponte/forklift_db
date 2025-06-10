@@ -10,7 +10,7 @@ import CompletionProgress from '@/components/inspection/CompletionProgress';
 import SafetyCheckModal from '@/components/inspection/SafetyCheckModal';
 import { MOCK_CHECKLIST_ITEMS } from '@/lib/mock-data';
 import type { ChecklistItem, InspectionRecordClientState } from '@/lib/mock-data';
-import type { StoredInspectionReport } from '@/lib/types';
+import type { StoredInspectionReport, StoredDowntimeLog } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,9 +24,10 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { v4 as uuidv4 } from 'uuid'; // For generating unique IDs
+import { v4 as uuidv4 } from 'uuid';
 
 const LOCAL_STORAGE_REPORTS_KEY = 'forkliftInspectionReports';
+const LOCAL_STORAGE_DOWNTIME_KEY = 'forkliftDowntimeLogs';
 
 export default function InspectionPage() {
   const [unitId, setUnitId] = useState('');
@@ -43,6 +44,7 @@ export default function InspectionPage() {
     if (isUnitIdConfirmed) {
       resetInspectionState();
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isUnitIdConfirmed]);
 
   const resetInspectionState = (resetUnitId = false) => {
@@ -54,6 +56,7 @@ export default function InspectionPage() {
       photo_url: null,
       timestamp: null,
       completed: false,
+      remarks: null, // Initialize remarks
     }));
     setInspectionItems(initialItems);
     setCurrentItemIdToInspect(initialItems.length > 0 ? initialItems[0].checklistItemId : null);
@@ -104,11 +107,11 @@ export default function InspectionPage() {
     }
   };
 
-  const handleInspectionSubmitForItem = (itemId: string, isSafe: boolean, photoUrl: string) => {
+  const handleInspectionSubmitForItem = (itemId: string, isSafe: boolean, photoUrl: string, remarks: string | null) => {
      setInspectionItems(currentItems => {
         const updatedItems = currentItems.map(item =>
             item.checklistItemId === itemId
-            ? { ...item, is_safe: isSafe, photo_url: photoUrl, timestamp: new Date().toISOString(), completed: true }
+            ? { ...item, is_safe: isSafe, photo_url: photoUrl, timestamp: new Date().toISOString(), completed: true, remarks: remarks }
             : item
         );
 
@@ -132,13 +135,14 @@ export default function InspectionPage() {
     setIsSubmittingReport(true);
 
     const overallStatus = hasUnsafeItems ? 'Unsafe' : 'Safe';
+    const reportDate = new Date().toISOString();
     const newReport: StoredInspectionReport = {
       id: uuidv4(),
       unitId: unitId,
-      date: new Date().toISOString(),
+      date: reportDate,
       operator: user.username,
       status: overallStatus,
-      items: [...inspectionItems], // Store a copy
+      items: [...inspectionItems], 
     };
 
     try {
@@ -149,21 +153,51 @@ export default function InspectionPage() {
       
       toast({
         title: "Report Submitted",
-        description: `Inspection report for Unit ID ${unitId} has been saved locally.`,
+        description: `Inspection report for Unit ID ${unitId} has been saved.`,
       });
-      // Optionally, navigate away or offer to start new inspection.
-      // For now, we'll allow starting a new one. The state will be reset below.
+
+      if (newReport.status === 'Unsafe') {
+        const firstUnsafeItem = newReport.items.find(item => !item.is_safe);
+        let downtimeReason = `Forklift unit ${unitId} deemed unsafe during inspection.`;
+        if (firstUnsafeItem) {
+          downtimeReason = `Unsafe item: ${firstUnsafeItem.part_name}.`;
+          if (firstUnsafeItem.remarks) {
+            downtimeReason += ` Remarks: ${firstUnsafeItem.remarks}`;
+          }
+        }
+
+        const newDowntimeLog: StoredDowntimeLog = {
+          id: uuidv4(),
+          unitId: newReport.unitId,
+          reason: downtimeReason,
+          startTime: reportDate, // Use inspection submission time as start time
+          endTime: null,
+          loggedAt: reportDate, // Use inspection submission time as loggedAt time
+        };
+
+        const existingDowntimeLogsRaw = localStorage.getItem(LOCAL_STORAGE_DOWNTIME_KEY);
+        const existingDowntimeLogs: StoredDowntimeLog[] = existingDowntimeLogsRaw ? JSON.parse(existingDowntimeLogsRaw) : [];
+        existingDowntimeLogs.push(newDowntimeLog);
+        localStorage.setItem(LOCAL_STORAGE_DOWNTIME_KEY, JSON.stringify(existingDowntimeLogs));
+        
+        toast({
+          title: "Downtime Logged",
+          description: `Downtime automatically logged for unsafe unit ${newReport.unitId}.`,
+          variant: "default" 
+        });
+      }
+      
     } catch (error) {
-      console.error("Error saving report to localStorage:", error);
+      console.error("Error saving report or downtime log to localStorage:", error);
       toast({
         title: "Submission Error",
-        description: "Could not save the report locally. Check console for details.",
+        description: "Could not save data locally. Check console for details.",
         variant: "destructive",
       });
     } finally {
       setIsSubmittingReport(false);
-      // We don't reset unitId here, user might want to submit another for same unit
-      // resetInspectionState(true); // To reset everything including unit ID
+      // resetInspectionState(true); // To reset everything including unit ID for a completely new inspection
+      // Consider not resetting unitId if user might want to inspect same unit again or start a new different one.
     }
   };
 
@@ -271,7 +305,7 @@ export default function InspectionPage() {
                         </span>
                       ) : (
                         <span className="flex items-center text-sm text-red-600">
-                          <AlertCircle className="mr-1 h-4 w-4" /> Unsafe
+                          <AlertCircle className="mr-1 h-4 w-4" /> Unsafe {item.remarks && `(${item.remarks.substring(0,30)}...)`}
                         </span>
                       )
                     ) : (

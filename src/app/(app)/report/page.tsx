@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileText, Download, Filter, CalendarDays, RefreshCw, CheckCircle, AlertCircle, ImageOff, ChevronDown } from "lucide-react";
+import { FileText, Download, Filter, CalendarDays, RefreshCw, CheckCircle, AlertCircle, ImageOff, MessageSquare } from "lucide-react";
 import Image from 'next/image';
 import { useState, useMemo, useEffect } from "react";
 import type { StoredInspectionReport } from '@/lib/types';
@@ -56,8 +56,8 @@ export default function ReportPage() {
         representativePhotoUrl: mock.photoUrl || PLACEHOLDER_IMAGE_DATA_URL,
         representativeDataAiHint: mock.dataAiHint || 'forklift',
         rawDate: new Date(mock.date),
-        items: mock.items.length > 0 ? mock.items : [ // Add dummy item if mock items are empty for structure
-            { checklistItemId: 'mock-item', part_name: 'Mock Part', question: 'Is it okay?', is_safe: true, photo_url: mock.photoUrl, timestamp: new Date().toISOString(), completed: true }
+        items: mock.items.length > 0 ? mock.items : [ 
+            { checklistItemId: 'mock-item', part_name: 'Mock Part', question: 'Is it okay?', is_safe: true, photo_url: mock.photoUrl, timestamp: new Date().toISOString(), completed: true, remarks: 'Mock remarks' }
         ],
       })),
       ...storedReports.map(report => {
@@ -96,8 +96,7 @@ export default function ReportPage() {
 
     const uniqueReportsMap = new Map<string, ReportDisplayEntry>();
     combinedReports.forEach(item => {
-        // Prioritize non-mock reports if IDs clash, or just use the first encountered
-        if (!uniqueReportsMap.has(item.id) || (uniqueReportsMap.get(item.id)?.items.length === 0 && item.items.length > 0)) {
+        if (!uniqueReportsMap.has(item.id) || (uniqueReportsMap.get(item.id)?.items.some(i => i.checklistItemId === 'mock-item') && item.items.length > 0 && !item.items.some(i=> i.checklistItemId === 'mock-item'))) {
            uniqueReportsMap.set(item.id, item);
         }
     });
@@ -120,14 +119,14 @@ export default function ReportPage() {
       if (filterDateRange.from && filterDateRange.to) {
         const fromDate = new Date(filterDateRange.from);
         const toDate = new Date(filterDateRange.to);
-        toDate.setHours(23, 59, 59, 999);
+        toDate.setHours(23, 59, 59, 999); // Ensure "to" date includes the whole day
         dateFilterMatch = entryDate >= fromDate && entryDate <= toDate;
       } else if (filterDateRange.from) {
         const fromDate = new Date(filterDateRange.from);
         dateFilterMatch = entryDate >= fromDate;
       } else if (filterDateRange.to) {
         const toDate = new Date(filterDateRange.to);
-        toDate.setHours(23, 59, 59, 999);
+        toDate.setHours(23, 59, 59, 999); // Ensure "to" date includes the whole day
         dateFilterMatch = entryDate <= toDate;
       }
 
@@ -136,7 +135,7 @@ export default function ReportPage() {
   }, [allReports, filterUnitId, filterDateRange]);
 
   const handleExportCsv = () => {
-    const headers = ["Inspection ID", "Unit ID", "Date", "Operator", "Overall Status", "Checklist Item", "Item Status", "Item Timestamp"];
+    const headers = ["Inspection ID", "Unit ID", "Date", "Operator", "Overall Status", "Checklist Item", "Item Status", "Item Timestamp", "Remarks", "Photo URL"];
     const csvRows: string[] = [headers.join(',')];
 
     filteredData.forEach(report => {
@@ -148,21 +147,21 @@ export default function ReportPage() {
           report.operator,
           report.status,
           item.part_name,
-          item.is_safe ? 'Safe' : 'Unsafe',
-          item.timestamp ? new Date(item.timestamp).toLocaleString() : 'N/A'
-        ].map(field => `"${String(field).replace(/"/g, '""')}"`); // Escape quotes
+          item.is_safe === null ? 'Pending' : item.is_safe ? 'Safe' : 'Unsafe',
+          item.timestamp ? new Date(item.timestamp).toLocaleString() : 'N/A',
+          item.remarks || '',
+          item.photo_url || ''
+        ].map(field => `"${String(field).replace(/"/g, '""')}"`); 
         csvRows.push(row.join(','));
       });
-       if (report.items.length === 0) { // Handle reports with no items for CSV
+       if (report.items.length === 0) { 
         const row = [
           report.id,
           report.unitId,
           report.date,
           report.operator,
           report.status,
-          'N/A',
-          'N/A',
-          'N/A'
+          'N/A', 'N/A', 'N/A', '', ''
         ].map(field => `"${String(field).replace(/"/g, '""')}"`);
         csvRows.push(row.join(','));
       }
@@ -233,11 +232,11 @@ export default function ReportPage() {
               />
             </div>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2 md:col-span-1">
-            <Button onClick={handleExportCsv} className="w-full text-base">
+          <div className="flex flex-col sm:flex-row gap-2 md:col-span-1 lg:col-span-1 lg:items-end">
+            <Button onClick={handleExportCsv} className="w-full sm:w-auto text-base">
               <Download className="mr-2 h-5 w-5" /> Export CSV
             </Button>
-            <Button onClick={loadReports} variant="outline" className="w-full text-base">
+            <Button onClick={loadReports} variant="outline" className="w-full sm:w-auto text-base">
               <RefreshCw className="mr-2 h-5 w-5" /> Refresh Data
             </Button>
           </div>
@@ -246,8 +245,7 @@ export default function ReportPage() {
 
       <Card className="shadow-md">
         <CardContent className="p-0">
-          {filteredData.length > 0 && (
-            <div className="hidden md:flex items-center px-4 py-3 border-b bg-muted/50 text-sm font-medium text-muted-foreground">
+           <div className="hidden md:flex items-center px-4 py-3 border-b bg-muted/50 text-sm font-medium text-muted-foreground">
               <div className="w-[20%] pl-1">Unit ID</div>
               <div className="w-[25%]">Date</div>
               <div className="w-[20%]">Operator</div>
@@ -255,23 +253,22 @@ export default function ReportPage() {
               <div className="w-[15%] text-center">Photo</div>
               <div className="w-[5%]"></div> {/* Spacer for chevron */}
             </div>
-          )}
           <Accordion type="multiple" className="w-full">
             {filteredData.map((report) => (
-              <AccordionItem value={report.id} key={report.id}>
-                <AccordionTrigger className="hover:bg-muted/50 w-full p-0 data-[state=open]:bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1">
-                  <div className="flex flex-1 items-center space-x-0 md:space-x-4 px-4 py-3 w-full">
+              <AccordionItem value={report.id} key={report.id} className="border-b last:border-b-0">
+                 <AccordionTrigger className="hover:bg-muted/50 w-full p-0 data-[state=open]:bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background">
+                  <div className="flex flex-col md:flex-row flex-1 items-start md:items-center space-y-1 md:space-y-0 md:space-x-4 px-4 py-3 w-full text-left">
                     <div className="font-medium w-full md:w-[20%] truncate">
-                      <span className="md:hidden font-semibold">Unit: </span>{report.unitId}
+                      <span className="md:hidden font-semibold text-xs text-muted-foreground">Unit: </span>{report.unitId}
                     </div>
-                    <div className="text-sm text-muted-foreground w-full mt-1 md:mt-0 md:w-[25%] truncate">
-                      <span className="md:hidden font-semibold">Date: </span>{report.date}
+                    <div className="text-sm text-muted-foreground w-full md:w-[25%] truncate">
+                      <span className="md:hidden font-semibold text-xs text-muted-foreground">Date: </span>{report.date}
                     </div>
-                    <div className="text-sm text-muted-foreground w-full mt-1 md:mt-0 md:w-[20%] truncate">
-                      <span className="md:hidden font-semibold">Operator: </span>{report.operator}
+                    <div className="text-sm text-muted-foreground w-full md:w-[20%] truncate">
+                      <span className="md:hidden font-semibold text-xs text-muted-foreground">Operator: </span>{report.operator}
                     </div>
-                    <div className="w-full mt-1 md:mt-0 md:w-[15%]">
-                       <span className="md:hidden font-semibold">Status: </span>
+                    <div className="w-full md:w-[15%]">
+                       <span className="md:hidden font-semibold text-xs text-muted-foreground">Status: </span>
                       <Badge
                         variant={report.status === 'Safe' ? 'default' : 'destructive'}
                         className={cn(
@@ -282,8 +279,8 @@ export default function ReportPage() {
                         {report.status}
                       </Badge>
                     </div>
-                    <div className="w-full mt-1 md:mt-0 md:w-[15%] flex md:justify-center">
-                       <span className="md:hidden font-semibold mr-2">Photo: </span>
+                    <div className="w-full md:w-[15%] flex items-center md:justify-center">
+                       <span className="md:hidden font-semibold text-xs text-muted-foreground mr-2">Rep. Photo: </span>
                       <Image
                         src={report.representativePhotoUrl || PLACEHOLDER_IMAGE_DATA_URL}
                         alt={`Inspection for ${report.unitId}`}
@@ -294,58 +291,69 @@ export default function ReportPage() {
                         onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
                       />
                     </div>
-                    {/* Chevron is part of AccordionTrigger, this is a placeholder for alignment on larger screens if needed, but usually not */}
-                    {/* <div className="w-[5%] hidden md:block"></div> */}
                   </div>
                 </AccordionTrigger>
                 <AccordionContent>
-                  <div className="p-4 bg-secondary/30">
-                    <h4 className="text-lg font-semibold mb-2">Inspection Items for Unit {report.unitId}:</h4>
+                  <div className="p-4 bg-secondary/30 border-t">
+                    <h4 className="text-lg font-semibold mb-3">Inspection Items for Unit {report.unitId}:</h4>
                     {report.items && report.items.length > 0 ? (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Item</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Timestamp</TableHead>
-                            <TableHead>Photo</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {report.items.map((item) => (
-                            <TableRow key={item.checklistItemId}>
-                              <TableCell>{item.part_name}</TableCell>
-                              <TableCell>
-                                {item.is_safe === null ? <span className="text-muted-foreground">Pending</span> :
-                                 item.is_safe ?
-                                  <span className="flex items-center text-green-600"><CheckCircle className="mr-1 h-4 w-4"/>Safe</span> :
-                                  <span className="flex items-center text-red-600"><AlertCircle className="mr-1 h-4 w-4"/>Unsafe</span>
-                                }
-                              </TableCell>
-                              <TableCell>{item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : 'N/A'}</TableCell>
-                              <TableCell>
-                                {item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL ? (
-                                  <Image
-                                    src={item.photo_url}
-                                    alt={item.part_name}
-                                    width={60}
-                                    height={45}
-                                    className="rounded-md object-cover"
-                                    data-ai-hint={item.part_name.toLowerCase()}
-                                    onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
-                                  />
-                                ) : (
-                                  <div className="flex items-center text-muted-foreground">
-                                    <ImageOff className="mr-1 h-4 w-4"/> No Photo
-                                  </div>
-                                )}
-                              </TableCell>
+                      <div className="overflow-x-auto">
+                        <Table>
+                          <TableHeader>
+                            <TableRow>
+                              <TableHead className="min-w-[150px]">Item</TableHead>
+                              <TableHead>Status</TableHead>
+                              <TableHead className="min-w-[150px]">Timestamp</TableHead>
+                              <TableHead className="min-w-[150px]">Remarks</TableHead>
+                              <TableHead className="text-center">Photo</TableHead>
                             </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
+                          </TableHeader>
+                          <TableBody>
+                            {report.items.map((item) => (
+                              <TableRow key={item.checklistItemId}>
+                                <TableCell className="font-medium">{item.part_name}</TableCell>
+                                <TableCell>
+                                  {item.is_safe === null ? <span className="text-muted-foreground">Pending</span> :
+                                  item.is_safe ?
+                                    <span className="flex items-center text-green-600"><CheckCircle className="mr-1 h-4 w-4"/>Safe</span> :
+                                    <span className="flex items-center text-red-600"><AlertCircle className="mr-1 h-4 w-4"/>Unsafe</span>
+                                  }
+                                </TableCell>
+                                <TableCell>{item.timestamp ? new Date(item.timestamp).toLocaleString() : 'N/A'}</TableCell>
+                                <TableCell>
+                                  {item.remarks ? (
+                                     <div className="flex items-start">
+                                        <MessageSquare className="mr-2 h-4 w-4 mt-1 text-muted-foreground flex-shrink-0" />
+                                        <span className="text-sm">{item.remarks}</span>
+                                     </div>
+                                  ) : (
+                                    <span className="text-xs text-muted-foreground italic">No remarks</span>
+                                  )}
+                                </TableCell>
+                                <TableCell className="text-center">
+                                  {item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL ? (
+                                    <Image
+                                      src={item.photo_url}
+                                      alt={item.part_name}
+                                      width={80}
+                                      height={60}
+                                      className="rounded-md object-cover mx-auto"
+                                      data-ai-hint={item.part_name.toLowerCase()}
+                                      onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
+                                    />
+                                  ) : (
+                                    <div className="flex items-center justify-center text-muted-foreground text-xs">
+                                      <ImageOff className="mr-1 h-4 w-4"/> No Photo
+                                    </div>
+                                  )}
+                                </TableCell>
+                              </TableRow>
+                            ))}
+                          </TableBody>
+                        </Table>
+                      </div>
                     ) : (
-                      <p className="text-muted-foreground">No inspection items recorded for this report.</p>
+                      <p className="text-muted-foreground text-center py-4">No inspection items recorded for this report.</p>
                     )}
                   </div>
                 </AccordionContent>
@@ -353,15 +361,17 @@ export default function ReportPage() {
             ))}
           </Accordion>
            {filteredData.length === 0 && (
-             <Table>
-               <TableBody>
-                 <TableRow>
-                   <TableCell colSpan={5} className="text-center py-10 text-muted-foreground">
-                     No inspection records found matching your filters.
-                   </TableCell>
-                 </TableRow>
-               </TableBody>
-             </Table>
+             <div className="relative w-full overflow-auto">
+                <table className="w-full caption-bottom text-sm">
+                  <tbody className="[&_tr:last-child]:border-0">
+                    <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
+                      <td colSpan={5} className="p-4 align-middle text-center py-10 text-muted-foreground">
+                        No inspection records found matching your filters.
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+             </div>
            )}
         </CardContent>
       </Card>

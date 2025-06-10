@@ -1,3 +1,4 @@
+
 export interface ChecklistItem {
   id: string;
   qr_code_data: string; // Data encoded in QR
@@ -27,7 +28,9 @@ export interface InspectionRecordClientState {
   photo_url: string | null; // User-provided or placeholder
   timestamp: string | null;
   completed: boolean;
+  remarks?: string | null; // New field for remarks on unsafe items
 }
 
 // Placeholder for a 1x1 transparent PNG data URI
 export const PLACEHOLDER_IMAGE_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
