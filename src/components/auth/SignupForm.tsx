@@ -6,15 +6,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { UserPlus, Eye, EyeOff } from 'lucide-react';
+import { UserPlus, Eye, EyeOff, ShieldCheck, User } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+type UserRole = 'operator' | 'supervisor';
 
 export default function SignupForm() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [role, setRole] = useState<UserRole>('operator');
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -49,7 +53,7 @@ export default function SignupForm() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ username, password, role: 'operator' }), // Assuming default role 'operator', PHP might override or use its own default
+        body: JSON.stringify({ username, password, role }),
       });
 
       const contentType = response.headers.get("content-type");
@@ -59,11 +63,14 @@ export default function SignupForm() {
         responseData = await response.json();
       } else {
         const textResponse = await response.text();
-        throw new Error(`Server returned non-JSON response: ${textResponse.substring(0,100)}...`);
+        // Attempt to show PHP error if HTML is returned
+        const shortError = textResponse.length > 150 ? textResponse.substring(0, 150) + "..." : textResponse;
+        throw new Error(`Server returned non-JSON response: ${shortError}`);
       }
 
       if (!response.ok) {
-        throw new Error(responseData.message || `HTTP error! status: ${response.status}`);
+        // Use message from JSON response if available, otherwise construct one
+        throw new Error(responseData.message || `Signup failed. Status: ${response.status}`);
       }
       
       if (responseData.success) {
@@ -73,6 +80,7 @@ export default function SignupForm() {
         });
         router.push('/login');
       } else {
+        // Use message from JSON response if available
         throw new Error(responseData.message || "An unknown error occurred during signup.");
       }
 
@@ -158,6 +166,28 @@ export default function SignupForm() {
                   {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="signup-role">Role</Label>
+              <Select value={role} onValueChange={(value: UserRole) => setRole(value)}>
+                <SelectTrigger id="signup-role" className="w-full text-base">
+                  <SelectValue placeholder="Select a role" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="operator">
+                    <div className="flex items-center">
+                      <User className="mr-2 h-4 w-4 text-muted-foreground" />
+                      Operator
+                    </div>
+                  </SelectItem>
+                  <SelectItem value="supervisor">
+                     <div className="flex items-center">
+                      <ShieldCheck className="mr-2 h-4 w-4 text-muted-foreground" />
+                      Supervisor
+                    </div>
+                  </SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <Button type="submit" className="w-full text-base" disabled={isSubmitting}>
               {isSubmitting ? 'Signing Up...' : 'Sign Up'}
