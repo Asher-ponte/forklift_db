@@ -6,7 +6,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileText, Download, Filter, CalendarDays, RefreshCw, CheckCircle, AlertCircle, ImageOff } from "lucide-react";
+import { FileText, Download, Filter, CalendarDays, RefreshCw, CheckCircle, AlertCircle, ImageOff, ChevronDown } from "lucide-react";
 import Image from 'next/image';
 import { useState, useMemo, useEffect } from "react";
 import type { StoredInspectionReport } from '@/lib/types';
@@ -18,6 +18,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion"
+import { cn } from "@/lib/utils";
 
 const LOCAL_STORAGE_REPORTS_KEY = 'forkliftInspectionReports';
 
@@ -57,7 +58,7 @@ export default function ReportPage() {
         rawDate: new Date(mock.date),
         items: mock.items.length > 0 ? mock.items : [ // Add dummy item if mock items are empty for structure
             { checklistItemId: 'mock-item', part_name: 'Mock Part', question: 'Is it okay?', is_safe: true, photo_url: mock.photoUrl, timestamp: new Date().toISOString(), completed: true }
-        ], 
+        ],
       })),
       ...storedReports.map(report => {
         let representativePhoto = PLACEHOLDER_IMAGE_DATA_URL;
@@ -92,7 +93,7 @@ export default function ReportPage() {
         };
       })
     ];
-    
+
     const uniqueReportsMap = new Map<string, ReportDisplayEntry>();
     combinedReports.forEach(item => {
         // Prioritize non-mock reports if IDs clash, or just use the first encountered
@@ -102,7 +103,7 @@ export default function ReportPage() {
     });
     const uniqueReports = Array.from(uniqueReportsMap.values());
     uniqueReports.sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
-    
+
     setAllReports(uniqueReports);
   };
 
@@ -113,9 +114,9 @@ export default function ReportPage() {
   const filteredData = useMemo(() => {
     return allReports.filter(entry => {
       const unitFilterMatch = filterUnitId ? entry.unitId.toLowerCase().includes(filterUnitId.toLowerCase()) : true;
-      
+
       let dateFilterMatch = true;
-      const entryDate = entry.rawDate; 
+      const entryDate = entry.rawDate;
       if (filterDateRange.from && filterDateRange.to) {
         const fromDate = new Date(filterDateRange.from);
         const toDate = new Date(filterDateRange.to);
@@ -129,7 +130,7 @@ export default function ReportPage() {
         toDate.setHours(23, 59, 59, 999);
         dateFilterMatch = entryDate <= toDate;
       }
-      
+
       return unitFilterMatch && dateFilterMatch;
     });
   }, [allReports, filterUnitId, filterDateRange]);
@@ -245,45 +246,57 @@ export default function ReportPage() {
 
       <Card className="shadow-md">
         <CardContent className="p-0">
+          {filteredData.length > 0 && (
+            <div className="hidden md:flex items-center px-4 py-3 border-b bg-muted/50 text-sm font-medium text-muted-foreground">
+              <div className="w-[20%] pl-1">Unit ID</div>
+              <div className="w-[25%]">Date</div>
+              <div className="w-[20%]">Operator</div>
+              <div className="w-[15%]">Status</div>
+              <div className="w-[15%] text-center">Photo</div>
+              <div className="w-[5%]"></div> {/* Spacer for chevron */}
+            </div>
+          )}
           <Accordion type="multiple" className="w-full">
             {filteredData.map((report) => (
               <AccordionItem value={report.id} key={report.id}>
-                <AccordionTrigger className="hover:bg-muted/50 w-full">
-                  <Table className="w-full pointer-events-none"> {/* Make table non-interactive for trigger */}
-                    <TableHeader className="sr-only"> {/* Hide headers for trigger row, main headers are outside */}
-                      <TableRow>
-                        <TableHead>Unit ID</TableHead>
-                        <TableHead>Date</TableHead>
-                        <TableHead>Operator</TableHead>
-                        <TableHead>Status</TableHead>
-                        <TableHead>Photo</TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      <TableRow className="border-b-0">
-                        <TableCell className="font-medium w-1/5">{report.unitId}</TableCell>
-                        <TableCell className="w-1/4">{report.date}</TableCell>
-                        <TableCell className="w-1/5">{report.operator}</TableCell>
-                        <TableCell className="w-1/6">
-                          <Badge variant={report.status === 'Safe' ? 'default' : 'destructive'} 
-                                 className={report.status === 'Safe' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-500'}>
-                            {report.status}
-                          </Badge>
-                        </TableCell>
-                        <TableCell className="w-1/6">
-                          <Image 
-                              src={report.representativePhotoUrl || PLACEHOLDER_IMAGE_DATA_URL} 
-                              alt={`Inspection for ${report.unitId}`} 
-                              width={80} 
-                              height={60} 
-                              className="rounded-md object-cover" 
-                              data-ai-hint={report.representativeDataAiHint}
-                              onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
-                          />
-                        </TableCell>
-                      </TableRow>
-                    </TableBody>
-                  </Table>
+                <AccordionTrigger className="hover:bg-muted/50 w-full p-0 data-[state=open]:bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1">
+                  <div className="flex flex-1 items-center space-x-0 md:space-x-4 px-4 py-3 w-full">
+                    <div className="font-medium w-full md:w-[20%] truncate">
+                      <span className="md:hidden font-semibold">Unit: </span>{report.unitId}
+                    </div>
+                    <div className="text-sm text-muted-foreground w-full mt-1 md:mt-0 md:w-[25%] truncate">
+                      <span className="md:hidden font-semibold">Date: </span>{report.date}
+                    </div>
+                    <div className="text-sm text-muted-foreground w-full mt-1 md:mt-0 md:w-[20%] truncate">
+                      <span className="md:hidden font-semibold">Operator: </span>{report.operator}
+                    </div>
+                    <div className="w-full mt-1 md:mt-0 md:w-[15%]">
+                       <span className="md:hidden font-semibold">Status: </span>
+                      <Badge
+                        variant={report.status === 'Safe' ? 'default' : 'destructive'}
+                        className={cn(
+                          'text-xs',
+                          report.status === 'Safe' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'
+                        )}
+                      >
+                        {report.status}
+                      </Badge>
+                    </div>
+                    <div className="w-full mt-1 md:mt-0 md:w-[15%] flex md:justify-center">
+                       <span className="md:hidden font-semibold mr-2">Photo: </span>
+                      <Image
+                        src={report.representativePhotoUrl || PLACEHOLDER_IMAGE_DATA_URL}
+                        alt={`Inspection for ${report.unitId}`}
+                        width={60}
+                        height={45}
+                        className="rounded-md object-cover"
+                        data-ai-hint={report.representativeDataAiHint}
+                        onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
+                      />
+                    </div>
+                    {/* Chevron is part of AccordionTrigger, this is a placeholder for alignment on larger screens if needed, but usually not */}
+                    {/* <div className="w-[5%] hidden md:block"></div> */}
+                  </div>
                 </AccordionTrigger>
                 <AccordionContent>
                   <div className="p-4 bg-secondary/30">
@@ -303,20 +316,20 @@ export default function ReportPage() {
                             <TableRow key={item.checklistItemId}>
                               <TableCell>{item.part_name}</TableCell>
                               <TableCell>
-                                {item.is_safe === null ? <span className="text-muted-foreground">Pending</span> : 
-                                 item.is_safe ? 
-                                  <span className="flex items-center text-green-600"><CheckCircle className="mr-1 h-4 w-4"/>Safe</span> : 
+                                {item.is_safe === null ? <span className="text-muted-foreground">Pending</span> :
+                                 item.is_safe ?
+                                  <span className="flex items-center text-green-600"><CheckCircle className="mr-1 h-4 w-4"/>Safe</span> :
                                   <span className="flex items-center text-red-600"><AlertCircle className="mr-1 h-4 w-4"/>Unsafe</span>
                                 }
                               </TableCell>
                               <TableCell>{item.timestamp ? new Date(item.timestamp).toLocaleTimeString() : 'N/A'}</TableCell>
                               <TableCell>
                                 {item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL ? (
-                                  <Image 
-                                    src={item.photo_url} 
-                                    alt={item.part_name} 
-                                    width={60} 
-                                    height={45} 
+                                  <Image
+                                    src={item.photo_url}
+                                    alt={item.part_name}
+                                    width={60}
+                                    height={45}
                                     className="rounded-md object-cover"
                                     data-ai-hint={item.part_name.toLowerCase()}
                                     onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
@@ -355,5 +368,3 @@ export default function ReportPage() {
     </div>
   );
 }
-
-    
