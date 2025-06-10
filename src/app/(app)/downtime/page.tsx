@@ -40,11 +40,20 @@ export default function DowntimePage() {
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
       
-      const logsFromAPI: StoredDowntimeLog[] = await response.json();
+      const responseData = await response.json();
+      let logsFromAPI: StoredDowntimeLog[] = [];
 
-      if (!Array.isArray(logsFromAPI)) {
-        console.error("API did not return an array for downtime logs:", logsFromAPI);
-        throw new Error("Invalid data format received from server for downtime logs. Expected an array.");
+      if (Array.isArray(responseData)) {
+        logsFromAPI = responseData;
+      } else if (responseData && Array.isArray(responseData.data)) {
+        logsFromAPI = responseData.data;
+      } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
+        // API returned an empty object {}, treat as no logs
+        logsFromAPI = [];
+      } else {
+        console.error("API returned an unexpected format for downtime logs:", responseData);
+        toast({ title: "Data Format Error", description: "Unexpected data format received for downtime logs from server.", variant: "destructive" });
+        logsFromAPI = []; // Default to empty on unexpected format
       }
       
       // Basic validation, though backend should enforce this
@@ -152,8 +161,6 @@ export default function DowntimePage() {
         }
         throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
       }
-      
-      // const updatedLog = await response.json(); // Assuming backend returns the updated log
       
       toast({ title: "Success", description: `End time updated for unit ${selectedLogForEdit.unitId} on the server.` });
       
