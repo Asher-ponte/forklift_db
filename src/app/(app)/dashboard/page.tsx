@@ -48,25 +48,36 @@ export default function DashboardPage() {
       // Process Inspection Reports
       let fetchedReports: StoredInspectionReport[] = [];
       if (reportsResponse.ok) {
-        const responseData = await reportsResponse.json();
-        let reportsArray: any[] | undefined;
+        try {
+          const responseData = await reportsResponse.json();
+          let reportsArray: any[] | undefined;
 
-        if (Array.isArray(responseData)) {
-          reportsArray = responseData;
-        } else if (responseData && Array.isArray(responseData.data)) {
-          reportsArray = responseData.data;
-        } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
-          reportsArray = [];
-        }
+          if (Array.isArray(responseData)) {
+            reportsArray = responseData;
+          } else if (responseData && Array.isArray(responseData.data)) {
+            reportsArray = responseData.data;
+          } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
+            reportsArray = [];
+          }
 
-        if (reportsArray) {
-          fetchedReports = reportsArray.map((report: any) => ({
-            ...report,
-            items: Array.isArray(report.items) ? report.items : [], 
-          }));
-        } else {
-          console.error("API returned an unexpected format for inspection reports:", responseData);
-          toast({ title: "Data Format Error", description: "Unexpected data format received for inspection reports from server.", variant: "destructive" });
+          if (reportsArray) {
+            fetchedReports = reportsArray.map((report: any) => ({
+              ...report,
+              items: Array.isArray(report.items) ? report.items : [], 
+            }));
+          } else {
+            console.error("API returned an unexpected format for inspection reports:", responseData);
+            toast({ title: "Data Format Error", description: "Unexpected data format received for inspection reports from server.", variant: "destructive" });
+          }
+        } catch (jsonError) {
+          console.error("Failed to parse JSON response for inspection reports:", jsonError);
+          const errorText = await reportsResponse.text();
+          toast({
+            title: "API Response Error",
+            description: `Server sent an invalid response (expected JSON, got HTML/Text) for inspection reports. Check backend. Response: ${errorText.substring(0, 150)}...`,
+            variant: "destructive",
+            duration: 10000,
+          });
         }
       } else {
         const errorText = await reportsResponse.text();
@@ -77,22 +88,33 @@ export default function DashboardPage() {
       // Process Downtime Logs
       let fetchedDowntimeLogs: StoredDowntimeLog[] = [];
       if (downtimeResponse.ok) {
-        const responseData = await downtimeResponse.json();
-        let downtimeArray: any[] | undefined;
-        
-        if (Array.isArray(responseData)) {
-          downtimeArray = responseData;
-        } else if (responseData && Array.isArray(responseData.data)) {
-          downtimeArray = responseData.data;
-        } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
-          downtimeArray = [];
-        }
+        try {
+          const responseData = await downtimeResponse.json();
+          let downtimeArray: any[] | undefined;
+          
+          if (Array.isArray(responseData)) {
+            downtimeArray = responseData;
+          } else if (responseData && Array.isArray(responseData.data)) {
+            downtimeArray = responseData.data;
+          } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
+            downtimeArray = [];
+          }
 
-        if (downtimeArray) {
-          fetchedDowntimeLogs = downtimeArray;
-        } else {
-          console.error("API returned an unexpected format for downtime logs:", responseData);
-          toast({ title: "Data Format Error", description: "Unexpected data format received for downtime logs from server.", variant: "destructive" });
+          if (downtimeArray) {
+            fetchedDowntimeLogs = downtimeArray;
+          } else {
+            console.error("API returned an unexpected format for downtime logs:", responseData);
+            toast({ title: "Data Format Error", description: "Unexpected data format received for downtime logs from server.", variant: "destructive" });
+          }
+        } catch (jsonError) {
+          console.error("Failed to parse JSON response for downtime logs:", jsonError);
+          const errorText = await downtimeResponse.text();
+          toast({
+            title: "API Response Error",
+            description: `Server sent an invalid response (expected JSON, got HTML/Text) for downtime logs. Check backend. Response: ${errorText.substring(0, 150)}...`,
+            variant: "destructive",
+            duration: 10000,
+          });
         }
       } else {
         const errorText = await downtimeResponse.text();
@@ -144,10 +166,10 @@ export default function DashboardPage() {
         description = error.message;
         if (error.message.toLowerCase().includes('failed to fetch')) {
           const localIpPattern = /^(http:\/\/)?(localhost|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)/;
-          if (apiBaseUrl && localIpPattern.test(apiBaseUrl)) {
-            description = `Failed to connect to the API server at ${apiBaseUrl}. Please ensure your XAMPP/PHP server is running, accessible on your network, and your firewall is not blocking connections. Original error: ${error.message}`;
+          if (apiBaseUrl && localIpPattern.test(apiBaseUrl) && !apiBaseUrl.includes('ngrok-free.app') && !apiBaseUrl.includes('loca.lt')) {
+            description = `Failed to connect to the API server at ${apiBaseUrl}. Please ensure your XAMPP/PHP server is running, accessible on your network, and your firewall is not blocking connections. If using a local IP, consider a tunneling service like ngrok or localtunnel for external access if needed. Original error: ${error.message}`;
           } else {
-            description = `Failed to fetch data from the API. Please check your network connection and the server status. Original error: ${error.message}`;
+            description = `Failed to fetch data from the API at ${apiBaseUrl}. Please check your network connection, the server status, and ensure the tunnel (if used) is active. Original error: ${error.message}`;
           }
         }
       }
@@ -264,3 +286,4 @@ export default function DashboardPage() {
 
     
 }
+
