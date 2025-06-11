@@ -112,12 +112,16 @@ export default function DataManagementPage() {
       return;
     }
     setIsLoadingDepartments(true);
+    let response: Response | undefined;
     try {
-      const response = await fetch(`${apiBaseUrl}/departments_api.php?_cacheBust=${new Date().getTime()}`);
+      response = await fetch(`${apiBaseUrl}/departments_api.php?_cacheBust=${new Date().getTime()}`);
       console.log('Fetch Departments Response Status:', response.status);
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Fetch Departments Error Text:', errorText);
+        let errorText = "Server returned an error";
+        try {
+            errorText = await response.text();
+        } catch (e) { /* Ignore if .text() fails */ }
+        console.error(`Fetch error for departments: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
         throw new Error(`Failed to fetch departments: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
       }
       
@@ -126,10 +130,9 @@ export default function DataManagementPage() {
 
       if (responseData && Array.isArray(responseData.data)) {
         departmentsArray = responseData.data;
-      } else if (Array.isArray(responseData)) { // Fallback for direct array, though 'data' key is preferred
+      } else if (Array.isArray(responseData)) { 
         departmentsArray = responseData;
       } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
-        // API returned an empty object {}, treat as no items
         departmentsArray = [];
       } else {
         console.error('API returned an unexpected format for departments:', responseData);
@@ -143,14 +146,12 @@ export default function DataManagementPage() {
       let errorMessage = "Could not fetch departments. Check console for details.";
       if (error instanceof Error) {
         errorMessage = error.message;
-        if (!response.ok && !(error.message.includes("JSON at position") || error.message.includes("token '<'"))) { // Avoid double logging JSON parse error if already handled
-            const rawText = await response.text().catch(() => "Could not get raw error text.");
-            console.error("Raw server response (fetchDepartments):", rawText.substring(0, 500));
-             if (rawText.toLowerCase().includes("json")) {
-                 errorMessage = "Server returned non-JSON response. Check console and PHP logs.";
-            } else {
-                errorMessage = `Server error: ${response.status}. Response: ${rawText.substring(0,100)}...`;
-            }
+        if (response && response.ok && (error.message.toLowerCase().includes("json") || error.message.toLowerCase().includes("unexpected token"))) {
+          try {
+            const rawText = await response.text();
+            console.error("Raw server response (fetchDepartments - JSON parse error):", rawText.substring(0, 500));
+            errorMessage = `Server returned non-JSON response for departments. PHP logs likely have details. Snippet: ${rawText.substring(0,100)}...`;
+          } catch (e) { /* failed to get raw text, original json error message is still fine */ }
         }
       }
       toast({ title: "Error Fetching Departments", description: errorMessage, variant: "destructive" });
@@ -166,12 +167,16 @@ export default function DataManagementPage() {
       return;
     }
     setIsLoadingMheUnits(true);
+    let response: Response | undefined;
     try {
-      const response = await fetch(`${apiBaseUrl}/mhe_units_api.php?_cacheBust=${new Date().getTime()}`);
+      response = await fetch(`${apiBaseUrl}/mhe_units_api.php?_cacheBust=${new Date().getTime()}`);
       console.log('Fetch MHE Units Response Status:', response.status);
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Fetch MHE Units Error Text:', errorText);
+        let errorText = "Server returned an error";
+        try {
+            errorText = await response.text();
+        } catch (e) { /* Ignore if .text() fails */ }
+        console.error(`Fetch error for MHE units: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
         throw new Error(`Failed to fetch MHE units: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
       }
 
@@ -202,14 +207,12 @@ export default function DataManagementPage() {
       let errorMessage = "Could not fetch MHE units. Check console for details.";
        if (error instanceof Error) {
         errorMessage = error.message;
-        if (!response.ok && !(error.message.includes("JSON at position") || error.message.includes("token '<'"))) { 
-            const rawText = await response.text().catch(() => "Could not get raw error text.");
-            console.error("Raw server response (fetchMheUnits):", rawText.substring(0, 500));
-            if (rawText.toLowerCase().includes("json")) {
-                 errorMessage = "Server returned non-JSON response. Check console and PHP logs.";
-            } else {
-                errorMessage = `Server error: ${response.status}. Response: ${rawText.substring(0,100)}...`;
-            }
+        if (response && response.ok && (error.message.toLowerCase().includes("json") || error.message.toLowerCase().includes("unexpected token"))) {
+          try {
+            const rawText = await response.text();
+            console.error("Raw server response (fetchMheUnits - JSON parse error):", rawText.substring(0, 500));
+            errorMessage = `Server returned non-JSON response for MHE units. PHP logs likely have details. Snippet: ${rawText.substring(0,100)}...`;
+          } catch (e) { /* failed to get raw text, original json error message is still fine */ }
         }
       }
       toast({ title: "Error Fetching MHE Units", description: errorMessage, variant: "destructive" });
@@ -225,12 +228,16 @@ export default function DataManagementPage() {
       return;
     }
     setIsLoadingChecklistItems(true);
+    let response: Response | undefined;
     try {
-      const response = await fetch(`${apiBaseUrl}/checklist_items_api.php?_cacheBust=${new Date().getTime()}`);
+      response = await fetch(`${apiBaseUrl}/checklist_items_api.php?_cacheBust=${new Date().getTime()}`);
       console.log('Fetch Checklist Items Response Status:', response.status);
       if (!response.ok) {
-        const errorText = await response.text();
-        console.error('Fetch Checklist Items Error Text:', errorText);
+        let errorText = "Server returned an error";
+        try {
+            errorText = await response.text();
+        } catch (e) { /* Ignore if .text() fails */ }
+        console.error(`Fetch error for checklist items: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
         throw new Error(`Failed to fetch checklist items: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
       }
       
@@ -255,14 +262,12 @@ export default function DataManagementPage() {
        let errorMessage = "Could not fetch checklist items. Check console for details.";
        if (error instanceof Error) {
         errorMessage = error.message;
-        if (!response.ok && !(error.message.includes("JSON at position") || error.message.includes("token '<'"))) { 
-            const rawText = await response.text().catch(() => "Could not get raw error text.");
-            console.error("Raw server response (fetchChecklistItems):", rawText.substring(0, 500));
-             if (rawText.toLowerCase().includes("json")) {
-                 errorMessage = "Server returned non-JSON response. Check console and PHP logs.";
-            } else {
-                errorMessage = `Server error: ${response.status}. Response: ${rawText.substring(0,100)}...`;
-            }
+        if (response && response.ok && (error.message.toLowerCase().includes("json") || error.message.toLowerCase().includes("unexpected token"))) {
+          try {
+            const rawText = await response.text();
+            console.error("Raw server response (fetchChecklistItems - JSON parse error):", rawText.substring(0, 500));
+            errorMessage = `Server returned non-JSON response for checklist items. PHP logs likely have details. Snippet: ${rawText.substring(0,100)}...`;
+          } catch (e) { /* failed to get raw text, original json error message is still fine */ }
         }
       }
       toast({ title: "Error Fetching Checklist Items", description: errorMessage, variant: "destructive" });
@@ -281,10 +286,6 @@ export default function DataManagementPage() {
   }, [user, fetchDepartments, fetchChecklistItems]);
   
   useEffect(() => {
-    // Fetch MHE units only after departments have been loaded (or attempted)
-    // and if the user is a supervisor.
-    // departments.length >= 0 ensures it runs even if departments is empty,
-    // as long as the fetch attempt has completed (isLoadingDepartments is false).
     if (user?.role === 'supervisor' && !isLoadingDepartments && departments.length >= 0) {
          fetchMheUnits();
     }
@@ -301,21 +302,19 @@ export default function DataManagementPage() {
       });
       if (!response.ok) {
         let errorData = { message: `Request failed: ${response.status} ${response.statusText}` };
-        if (response.status === 409) { // Conflict
+        if (response.status === 409) { 
             throw new Error("Failed to add department. The department name may already exist. Please use a unique name.");
         }
         try {
           const textResponse = await response.text();
-          // Try to parse as JSON, but if it fails, use the text response.
           try {
             errorData = JSON.parse(textResponse);
           } catch (e) {
             throw new Error(textResponse ? `Server error: ${textResponse.substring(0,100)}...` : errorData.message);
           }
         } catch (e) {
-            // This catch is for if response.text() itself fails, or if JSON.parse above failed.
-            if (e instanceof Error) throw e; // Re-throw if it's already an error object
-            throw new Error(errorData.message); // Fallback to original message
+            if (e instanceof Error) throw e; 
+            throw new Error(errorData.message); 
         }
         throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
       }
