@@ -48,8 +48,9 @@ export default function DashboardPage() {
       // Process Inspection Reports
       let fetchedReports: StoredInspectionReport[] = [];
       if (reportsResponse.ok) {
+        const reportsResponseText = await reportsResponse.text();
         try {
-          const responseData = await reportsResponse.json();
+          const responseData = JSON.parse(reportsResponseText);
           let reportsArray: any[] | undefined;
 
           if (Array.isArray(responseData)) {
@@ -66,15 +67,14 @@ export default function DashboardPage() {
               items: Array.isArray(report.items) ? report.items : [], 
             }));
           } else {
-            console.error("API returned an unexpected format for inspection reports:", responseData);
-            toast({ title: "Data Format Error", description: "Unexpected data format received for inspection reports from server.", variant: "destructive" });
+            console.error("API returned an unexpected format for inspection reports (after parsing):", responseData);
+            toast({ title: "Data Format Error", description: "Unexpected data format received for inspection reports from server (after parsing).", variant: "destructive" });
           }
         } catch (jsonError) {
           console.error("Failed to parse JSON response for inspection reports:", jsonError);
-          const errorText = await reportsResponse.text();
           toast({
             title: "API Response Error",
-            description: `Server sent an invalid response (expected JSON, got HTML/Text) for inspection reports. Check backend. Response: ${errorText.substring(0, 150)}...`,
+            description: `Server sent an invalid response (expected JSON, got HTML/Text) for inspection reports. Check backend. Response: ${reportsResponseText.substring(0, 150)}...`,
             variant: "destructive",
             duration: 10000,
           });
@@ -88,8 +88,9 @@ export default function DashboardPage() {
       // Process Downtime Logs
       let fetchedDowntimeLogs: StoredDowntimeLog[] = [];
       if (downtimeResponse.ok) {
+        const downtimeResponseText = await downtimeResponse.text();
         try {
-          const responseData = await downtimeResponse.json();
+          const responseData = JSON.parse(downtimeResponseText);
           let downtimeArray: any[] | undefined;
           
           if (Array.isArray(responseData)) {
@@ -103,15 +104,14 @@ export default function DashboardPage() {
           if (downtimeArray) {
             fetchedDowntimeLogs = downtimeArray;
           } else {
-            console.error("API returned an unexpected format for downtime logs:", responseData);
-            toast({ title: "Data Format Error", description: "Unexpected data format received for downtime logs from server.", variant: "destructive" });
+            console.error("API returned an unexpected format for downtime logs (after parsing):", responseData);
+            toast({ title: "Data Format Error", description: "Unexpected data format received for downtime logs from server (after parsing).", variant: "destructive" });
           }
         } catch (jsonError) {
           console.error("Failed to parse JSON response for downtime logs:", jsonError);
-          const errorText = await downtimeResponse.text();
           toast({
             title: "API Response Error",
-            description: `Server sent an invalid response (expected JSON, got HTML/Text) for downtime logs. Check backend. Response: ${errorText.substring(0, 150)}...`,
+            description: `Server sent an invalid response (expected JSON, got HTML/Text) for downtime logs. Check backend. Response: ${downtimeResponseText.substring(0, 150)}...`,
             variant: "destructive",
             duration: 10000,
           });
