@@ -7,13 +7,15 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import CompletionProgress from '@/components/inspection/CompletionProgress';
 import SafetyCheckModal from '@/components/inspection/SafetyCheckModal';
-import { MOCK_CHECKLIST_ITEMS } from '@/lib/mock-data';
-import type { ChecklistItem, InspectionRecordClientState } from '@/lib/mock-data';
-import type { StoredInspectionReport, StoredDowntimeLog, DowntimeUnsafeItem } from '@/lib/types'; // Added DowntimeUnsafeItem
+// MOCK_CHECKLIST_ITEMS is no longer the primary source for inspections.
+// It can be kept for reference or potential future fallback/initial population logic if desired.
+// import { MOCK_CHECKLIST_ITEMS } from '@/lib/mock-data';
+import type { ChecklistItem as SafetyCheckModalItem } from '@/lib/mock-data'; // Renamed for clarity for the modal
+import type { StoredInspectionReport, StoredDowntimeLog, DowntimeUnsafeItem } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle, Send, Edit3, Warehouse, TruckIcon } from 'lucide-react';
+import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle, Send, Edit3, Warehouse, TruckIcon, Loader2 } from 'lucide-react';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,37 +27,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { v4 as uuidv4 } from 'uuid';
 
-// Mock Data for Departments and MHEs (Material Handling Equipment)
-interface Department {
-  id: string;
-  name: string;
-}
-
-interface Mhe {
-  id: string; 
-  name: string; 
-  departmentId: string;
-}
-
-const MOCK_DEPARTMENTS: Department[] = [
-  { id: 'warehouse-a', name: 'Warehouse A' },
-  { id: 'production-floor', name: 'Production Floor' },
-  { id: 'shipping', name: 'Shipping Department' },
-  { id: 'receiving', name: 'Receiving Area' },
-];
-
-const MOCK_MHES: Mhe[] = [
-  { id: 'FL001', name: 'Forklift FL001 (Alpha)', departmentId: 'warehouse-a' },
-  { id: 'FL002', name: 'Forklift FL002 (Bravo)', departmentId: 'warehouse-a' },
-  { id: 'PJ001', name: 'Pallet Jack PJ001', departmentId: 'production-floor' },
-  { id: 'FL003', name: 'Forklift FL003 (Delta)', departmentId: 'shipping' },
-  { id: 'FL004', name: 'Forklift FL004 (Echo)', departmentId: 'production-floor' },
-  { id: 'RE001', name: 'Reach Truck RE001', departmentId: 'receiving' },
-];
-
-const REPORTS_STORAGE_KEY = 'forkliftInspectionReports';
-const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs';
-
+// --- LocalStorage Helper (already present, ensure it's robust) ---
 const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
   if (typeof window === 'undefined') return defaultValue;
   const item = localStorage.getItem(key);
@@ -79,11 +51,67 @@ const saveToLocalStorage = <T>(key: string, value: T): void => {
   }
 };
 
+// --- Data Types ---
+// This type should align with what's stored by DataManagementPage
+interface ChecklistMasterItem {
+  id: string;
+  qr_code_data?: string | null;
+  part_name: string;
+  description?: string | null;
+  question: string;
+  is_active?: boolean;
+}
+
+interface Department {
+  id: string;
+  name: string;
+}
+
+interface Mhe {
+  id: string;
+  name: string;
+  departmentId: string;
+}
+
+// Mock Data for Departments and MHEs (remains the same)
+const MOCK_DEPARTMENTS: Department[] = [
+  { id: 'warehouse-a', name: 'Warehouse A' },
+  { id: 'production-floor', name: 'Production Floor' },
+  { id: 'shipping', name: 'Shipping Department' },
+  { id: 'receiving', name: 'Receiving Area' },
+];
+
+const MOCK_MHES: Mhe[] = [
+  { id: 'FL001', name: 'Forklift FL001 (Alpha)', departmentId: 'warehouse-a' },
+  { id: 'FL002', name: 'Forklift FL002 (Bravo)', departmentId: 'warehouse-a' },
+  { id: 'PJ001', name: 'Pallet Jack PJ001', departmentId: 'production-floor' },
+  { id: 'FL003', name: 'Forklift FL003 (Delta)', departmentId: 'shipping' },
+  { id: 'FL004', name: 'Forklift FL004 (Echo)', departmentId: 'production-floor' },
+  { id: 'RE001', name: 'Reach Truck RE001', departmentId: 'receiving' },
+];
+
+export interface InspectionRecordClientState {
+  checklistItemId: string;
+  part_name: string;
+  question: string;
+  is_safe: boolean | null;
+  photo_url: string | null;
+  timestamp: string | null;
+  completed: boolean;
+  remarks: string | null;
+}
+
+const REPORTS_STORAGE_KEY = 'forkliftInspectionReports';
+const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs';
+const CHECKLIST_ITEMS_KEY = 'forkliftChecklistMasterItems'; // Key used by Data Management
 
 export default function InspectionPage() {
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('');
   const [selectedMheId, setSelectedMheId] = useState<string>('');
   const [isInspectionSetupConfirmed, setIsInspectionSetupConfirmed] = useState(false);
+  
+  const [masterChecklist, setMasterChecklist] = useState<ChecklistMasterItem[]>([]);
+  const [isLoadingChecklist, setIsLoadingChecklist] = useState(false);
 
   const [inspectionItems, setInspectionItems] = useState<InspectionRecordClientState[]>([]);
   const [currentItemIdToInspect, setCurrentItemIdToInspect] = useState<string | null>(null);
@@ -98,8 +126,32 @@ export default function InspectionPage() {
     return MOCK_MHES.filter(mhe => mhe.departmentId === selectedDepartmentId);
   }, [selectedDepartmentId]);
 
+  // Load checklist items from localStorage
+  useEffect(() => {
+    if (isInspectionSetupConfirmed) {
+      setIsLoadingChecklist(true);
+      const storedItems = getFromLocalStorage<ChecklistMasterItem[]>(CHECKLIST_ITEMS_KEY, []);
+      const activeItems = storedItems.filter(item => item.is_active !== false);
+
+      if (activeItems.length > 0) {
+        setMasterChecklist(activeItems);
+      } else {
+        setMasterChecklist([]);
+        toast({
+          title: "No Checklist Items",
+          description: "No active inspection items found. Please configure them in Data Management. Inspection cannot proceed.",
+          variant: "destructive",
+          duration: 7000
+        });
+        // Optionally, you might want to prevent further inspection steps if masterChecklist is empty.
+        // For now, the UI will show "0 items" and no way to inspect.
+      }
+      setIsLoadingChecklist(false);
+    }
+  }, [isInspectionSetupConfirmed, toast]);
+
   const resetInspectionState = useCallback((resetSelections = false) => {
-    const initialItems = MOCK_CHECKLIST_ITEMS.map(item => ({
+    const initialItems = masterChecklist.map(item => ({
       checklistItemId: item.id,
       part_name: item.part_name,
       question: item.question,
@@ -117,19 +169,28 @@ export default function InspectionPage() {
       setSelectedDepartmentId('');
       setSelectedMheId('');
       setIsInspectionSetupConfirmed(false);
+      setMasterChecklist([]); // Clear loaded checklist when setup is reset
     }
-  }, []);
+  }, [masterChecklist]);
 
 
   useEffect(() => {
+    // This effect triggers resetInspectionState when masterChecklist is loaded and setup is confirmed.
+    // Or clears inspection if masterChecklist is empty after trying to load.
     if (isInspectionSetupConfirmed) {
-      resetInspectionState(false);
+      if (masterChecklist.length > 0) {
+        resetInspectionState(false);
+      } else if (!isLoadingChecklist) { // Ensure not to reset while still loading
+        // If masterChecklist is empty and not loading, implies no items found
+        setInspectionItems([]);
+        setCurrentItemIdToInspect(null);
+      }
     }
-  }, [isInspectionSetupConfirmed, resetInspectionState]);
+  }, [isInspectionSetupConfirmed, masterChecklist, resetInspectionState, isLoadingChecklist]);
 
 
   const completedItemsCount = useMemo(() => inspectionItems.filter(item => item.completed).length, [inspectionItems]);
-  const totalItemsCount = MOCK_CHECKLIST_ITEMS.length;
+  const totalItemsCount = useMemo(() => masterChecklist.length, [masterChecklist]);
 
   const isInspectionComplete = useMemo(() => totalItemsCount > 0 && completedItemsCount === totalItemsCount, [completedItemsCount, totalItemsCount]);
 
@@ -144,10 +205,18 @@ export default function InspectionPage() {
     }
   }, [isInspectionComplete, hasUnsafeItems]);
 
-  const currentChecklistItemDetails = useMemo(() => {
+  const currentChecklistItemDetails: SafetyCheckModalItem | null = useMemo(() => {
     if (!currentItemIdToInspect) return null;
-    return MOCK_CHECKLIST_ITEMS.find(item => item.id === currentItemIdToInspect) || null;
-  }, [currentItemIdToInspect]);
+    const foundItem = masterChecklist.find(item => item.id === currentItemIdToInspect);
+    if (!foundItem) return null;
+    return {
+      id: foundItem.id,
+      qr_code_data: foundItem.qr_code_data || '', // Default for modal
+      part_name: foundItem.part_name,
+      description: foundItem.description || 'No description provided.', // Default for modal
+      question: foundItem.question,
+    };
+  }, [currentItemIdToInspect, masterChecklist]);
 
   const handleStartInspectionSetup = () => {
     if (!selectedDepartmentId) {
@@ -158,7 +227,7 @@ export default function InspectionPage() {
       toast({ title: "Error", description: "Please select an MHE ID.", variant: "destructive"});
       return;
     }
-    setIsInspectionSetupConfirmed(true);
+    setIsInspectionSetupConfirmed(true); // This will trigger checklist loading
   };
   
   const handleDepartmentChange = (deptId: string) => {
@@ -168,7 +237,7 @@ export default function InspectionPage() {
 
 
   const handleQrScanOrSelect = (itemId: string) => {
-    const itemToInspect = MOCK_CHECKLIST_ITEMS.find(i => i.id === itemId);
+    const itemToInspect = masterChecklist.find(i => i.id === itemId);
     if (itemToInspect) {
       setCurrentItemIdToInspect(itemToInspect.id);
       setIsModalOpen(true);
@@ -196,12 +265,17 @@ export default function InspectionPage() {
     setIsModalOpen(false);
   };
 
-  const availableItemsToInspect = MOCK_CHECKLIST_ITEMS.filter(mItem =>
+  const availableItemsToInspect = useMemo(() => masterChecklist.filter(mItem =>
     !inspectionItems.find(iItem => iItem.checklistItemId === mItem.id)?.completed
-  );
+  ), [masterChecklist, inspectionItems]);
 
   const handleSubmitReport = async () => {
-    if (!isInspectionComplete || !user || !selectedMheId) return;
+    if (!isInspectionComplete || !user || !selectedMheId || totalItemsCount === 0) {
+        if (totalItemsCount === 0) {
+            toast({ title: "Cannot Submit", description: "No checklist items were available for this inspection.", variant: "destructive" });
+        }
+        return;
+    }
     setIsSubmittingReport(true);
 
     const overallStatus = hasUnsafeItems ? 'Unsafe' : 'Safe';
@@ -332,7 +406,8 @@ export default function InspectionPage() {
               </Select>
             </div>
             
-            <Button onClick={handleStartInspectionSetup} size="lg" className="w-full text-base py-3" disabled={!selectedDepartmentId || !selectedMheId}>
+            <Button onClick={handleStartInspectionSetup} size="lg" className="w-full text-base py-3" disabled={!selectedDepartmentId || !selectedMheId || isLoadingChecklist}>
+              {isLoadingChecklist ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
               Start Inspection for {selectedMheId || "Selected MHE"}
             </Button>
           </CardContent>
@@ -342,6 +417,15 @@ export default function InspectionPage() {
   }
 
   const selectedMheDetails = MOCK_MHES.find(mhe => mhe.id === selectedMheId);
+
+  if (isLoadingChecklist) {
+    return (
+      <div className="flex h-[calc(100vh-200px)] items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="ml-3 text-muted-foreground">Loading checklist items...</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -353,7 +437,8 @@ export default function InspectionPage() {
           </CardTitle>
           <CardDescription>
             Complete all checklist items to ensure equipment safety. Data saved to local storage.
-            {isInspectionComplete && " All items inspected."}
+            {totalItemsCount === 0 && " No checklist items loaded. Please configure them in Data Management."}
+            {isInspectionComplete && totalItemsCount > 0 && " All items inspected."}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -363,7 +448,18 @@ export default function InspectionPage() {
         </CardContent>
       </Card>
 
-      {!isInspectionComplete ? (
+      {totalItemsCount === 0 && !isLoadingChecklist ? (
+         <Card className="shadow-md">
+            <CardHeader><CardTitle className="text-xl text-destructive">No Inspection Items</CardTitle></CardHeader>
+            <CardContent>
+                <p className="text-muted-foreground">
+                    There are no active inspection items configured. Please go to the 
+                    <Link href="/data-management" className="text-primary hover:underline mx-1">Data Management</Link> 
+                    page to add checklist items before starting an inspection.
+                </p>
+            </CardContent>
+         </Card>
+      ) : !isInspectionComplete ? (
         <>
           <CompletionProgress completedItems={completedItemsCount} totalItems={totalItemsCount} />
 
@@ -376,7 +472,7 @@ export default function InspectionPage() {
               <Select
                 onValueChange={(value) => handleQrScanOrSelect(value)}
                 value={currentItemIdToInspect || ""}
-                disabled={availableItemsToInspect.length === 0 || isModalOpen}
+                disabled={availableItemsToInspect.length === 0 || isModalOpen || totalItemsCount === 0}
               >
                 <SelectTrigger className="w-full sm:w-[300px] text-base py-3 h-auto" aria-label="Select item to inspect">
                   <SelectValue placeholder="Select an item..." />
@@ -387,17 +483,20 @@ export default function InspectionPage() {
                       {item.part_name}
                     </SelectItem>
                   ))}
-                  {availableItemsToInspect.length === 0 && !isInspectionComplete && (
+                  {availableItemsToInspect.length === 0 && !isInspectionComplete && totalItemsCount > 0 && (
                     <div className="p-4 text-center text-sm text-muted-foreground">All items inspected. Preparing for next step.</div>
                   )}
-                   {availableItemsToInspect.length === 0 && isInspectionComplete && (
+                   {availableItemsToInspect.length === 0 && isInspectionComplete && totalItemsCount > 0 && (
                     <div className="p-4 text-center text-sm text-muted-foreground">All items inspected.</div>
+                  )}
+                  {totalItemsCount === 0 && (
+                     <div className="p-4 text-center text-sm text-muted-foreground">No items to inspect.</div>
                   )}
                 </SelectContent>
               </Select>
               <Button
                 onClick={() => currentItemIdToInspect && handleQrScanOrSelect(currentItemIdToInspect)}
-                disabled={!currentItemIdToInspect || isModalOpen || availableItemsToInspect.length === 0}
+                disabled={!currentItemIdToInspect || isModalOpen || availableItemsToInspect.length === 0 || totalItemsCount === 0}
                 size="lg"
                 className="w-full sm:w-auto text-base py-3"
               >
@@ -432,7 +531,7 @@ export default function InspectionPage() {
             </CardContent>
           </Card>
         </>
-      ) : (
+      ) : ( // isInspectionComplete is true and totalItemsCount > 0
         <div className="text-center mt-8 space-y-6">
           <Card className="shadow-lg w-full max-w-md mx-auto">
             <CardHeader className="text-center">
@@ -468,7 +567,7 @@ export default function InspectionPage() {
       <SafetyCheckModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        item={currentChecklistItemDetails} 
+        item={currentChecklistItemDetails} // This is now mapped from ChecklistMasterItem
         onSubmit={handleInspectionSubmitForItem}
       />
 

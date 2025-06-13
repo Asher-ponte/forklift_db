@@ -173,9 +173,7 @@ export default function DataManagementPage() {
     try {
       const storedChecklistItems = getFromLocalStorage<ChecklistMasterItem[]>(CHECKLIST_ITEMS_KEY, []);
       setChecklistItems(storedChecklistItems);
-      // Note: The main inspection page uses MOCK_CHECKLIST_ITEMS. 
-      // These local storage checklist items are for management here but won't affect inspections unless InspectionPage is changed.
-      toast({ title: "Checklist Items Loaded", description: "Data loaded from local storage. (Note: Inspections use MOCK_CHECKLIST_ITEMS)", duration: 3000 });
+      toast({ title: "Checklist Items Loaded", description: "Checklist items loaded from local storage. These items are used for inspections.", duration: 3000 });
     } catch (error) {
       toast({ title: "Error Fetching Checklist Items", description: "Could not load checklist items from local storage.", variant: "destructive" });
       setChecklistItems([]);
@@ -468,7 +466,7 @@ export default function DataManagementPage() {
             <CardHeader className="flex flex-row justify-between items-center">
               <div>
                 <CardTitle>Manage Inspection Checklist Items</CardTitle>
-                <CardDescription>Define items for inspection forms (stored locally). Note: Inspections currently use hardcoded MOCK_CHECKLIST_ITEMS.</CardDescription>
+                <CardDescription>Define items for inspection forms (stored locally). These items will be used in actual inspections.</CardDescription>
               </div>
               <Dialog open={isAddItemModalOpen} onOpenChange={setIsAddItemModalOpen}>
                 <DialogTrigger asChild>
@@ -545,3 +543,4 @@ export default function DataManagementPage() {
     </div>
   );
 }
+
