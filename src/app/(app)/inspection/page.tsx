@@ -7,15 +7,13 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import CompletionProgress from '@/components/inspection/CompletionProgress';
 import SafetyCheckModal from '@/components/inspection/SafetyCheckModal';
-// MOCK_CHECKLIST_ITEMS is no longer the primary source for inspections.
-// It can be kept for reference or potential future fallback/initial population logic if desired.
-// import { MOCK_CHECKLIST_ITEMS } from '@/lib/mock-data';
 import type { ChecklistItem as SafetyCheckModalItem } from '@/lib/mock-data'; // Renamed for clarity for the modal
 import type { StoredInspectionReport, StoredDowntimeLog, DowntimeUnsafeItem } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle, Send, Edit3, Warehouse, TruckIcon, Loader2 } from 'lucide-react';
+import Link from 'next/link'; // Added missing import
 import {
   AlertDialog,
   AlertDialogAction,
