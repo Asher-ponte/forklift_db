@@ -9,7 +9,7 @@ import CompletionProgress from '@/components/inspection/CompletionProgress';
 import SafetyCheckModal from '@/components/inspection/SafetyCheckModal';
 import { MOCK_CHECKLIST_ITEMS } from '@/lib/mock-data';
 import type { ChecklistItem, InspectionRecordClientState } from '@/lib/mock-data';
-import type { StoredInspectionReport, StoredDowntimeLog } from '@/lib/types';
+import type { StoredInspectionReport, StoredDowntimeLog, DowntimeUnsafeItem } from '@/lib/types'; // Added DowntimeUnsafeItem
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -26,8 +26,6 @@ import {
 import { v4 as uuidv4 } from 'uuid';
 
 // Mock Data for Departments and MHEs (Material Handling Equipment)
-// In a real app, this data would be fetched from the backend / Data Management page
-// For local storage mode, these could eventually be fetched from localStorage if DataManagementPage is also updated
 interface Department {
   id: string;
   name: string;
@@ -239,31 +237,36 @@ export default function InspectionPage() {
       });
 
       if (newReport.status === 'Unsafe') {
-        const firstUnsafeItem = newReport.items.find(item => !item.is_safe);
-        let downtimeReason = `MHE unit ${newReport.unitId} deemed unsafe during inspection.`;
-        if (firstUnsafeItem) {
-          downtimeReason = `Unsafe item: ${firstUnsafeItem.part_name}.`;
-          if (firstUnsafeItem.remarks) {
-            downtimeReason += ` Remarks: ${firstUnsafeItem.remarks}`;
-          }
+        const unsafeItemsForDowntimeLog: DowntimeUnsafeItem[] = newReport.items
+          .filter(item => item.is_safe === false)
+          .map(item => ({
+            part_name: item.part_name,
+            remarks: item.remarks || null,
+            photo_url: item.photo_url || null,
+          }));
+
+        let downtimeReason = `Unit ${newReport.unitId} failed inspection.`;
+        if (unsafeItemsForDowntimeLog.length > 0) {
+          downtimeReason += ` ${unsafeItemsForDowntimeLog.length} item(s) reported as unsafe.`;
         }
 
-        const newDowntimeLog: StoredDowntimeLog = {
+        const newDowntimeLogEntry: StoredDowntimeLog = {
           id: uuidv4(),
           unitId: newReport.unitId,
           reason: downtimeReason,
           startTime: reportDate,
           endTime: null,
           loggedAt: reportDate,
+          unsafeItems: unsafeItemsForDowntimeLog.length > 0 ? unsafeItemsForDowntimeLog : undefined,
         };
         
         const allDowntimeLogs = getFromLocalStorage<StoredDowntimeLog[]>(DOWNTIME_STORAGE_KEY, []);
-        allDowntimeLogs.push(newDowntimeLog);
+        allDowntimeLogs.push(newDowntimeLogEntry);
         saveToLocalStorage(DOWNTIME_STORAGE_KEY, allDowntimeLogs);
 
         toast({
-            title: "Downtime Logged",
-            description: `Downtime automatically logged for unsafe unit ${newReport.unitId} to local storage.`,
+            title: "Downtime Logged Automatically",
+            description: `Unsafe unit ${newReport.unitId}. Downtime logged with ${unsafeItemsForDowntimeLog.length} unsafe item(s).`,
             variant: "default"
         });
       }
@@ -490,3 +493,4 @@ export default function InspectionPage() {
     </div>
   );
 }
+

@@ -10,9 +10,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { RefreshCw, ListChecks, CheckSquare, Edit } from 'lucide-react';
-import type { StoredDowntimeLog } from '@/lib/types';
+import { RefreshCw, ListChecks, CheckSquare, Edit, Eye } from 'lucide-react';
+import type { StoredDowntimeLog, DowntimeUnsafeItem } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
+import Image from 'next/image';
+import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
 
 const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs';
 
@@ -34,6 +36,8 @@ export default function DowntimePage() {
   const [isEndTimeModalOpen, setIsEndTimeModalOpen] = useState(false);
   const [selectedLogForEdit, setSelectedLogForEdit] = useState<StoredDowntimeLog | null>(null);
   const [currentEditingEndTime, setCurrentEditingEndTime] = useState('');
+  const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
+  const [selectedLogForDetails, setSelectedLogForDetails] = useState<StoredDowntimeLog | null>(null);
   const { toast } = useToast();
 
   const loadDowntimeLogs = useCallback(async () => {
@@ -44,7 +48,8 @@ export default function DowntimePage() {
       const validLogs = logsFromStorage.filter(log =>
         log && typeof log.id === 'string' && typeof log.unitId === 'string' &&
         typeof log.reason === 'string' && typeof log.startTime === 'string' &&
-        typeof log.loggedAt === 'string' && (log.endTime === null || typeof log.endTime === 'string' || typeof log.endTime === 'undefined')
+        typeof log.loggedAt === 'string' && (log.endTime === null || typeof log.endTime === 'string' || typeof log.endTime === 'undefined') &&
+        (log.unsafeItems === undefined || Array.isArray(log.unsafeItems)) // Validate new field
       ).sort((a, b) => {
           let dateAVal: number, dateBVal: number;
           try { dateAVal = new Date(a.loggedAt).getTime(); } catch { dateAVal = NaN; }
@@ -149,6 +154,11 @@ export default function DowntimePage() {
     }
   };
 
+  const handleOpenDetailsModal = (log: StoredDowntimeLog) => {
+    setSelectedLogForDetails(log);
+    setIsDetailsModalOpen(true);
+  };
+
   return (
     <div className="space-y-8">
       <DowntimeForm onLogAdded={loadDowntimeLogs} />
@@ -160,7 +170,7 @@ export default function DowntimePage() {
               <ListChecks className="mr-3 h-7 w-7 text-primary" />
               Recent Downtime Logs
             </CardTitle>
-            <CardDescription>List of all recorded forklift downtime incidents from local storage. Set end times to mark repairs as complete.</CardDescription>
+            <CardDescription>List of all recorded forklift downtime incidents from local storage. Set end times to mark repairs as complete. View details for inspection-generated logs.</CardDescription>
           </div>
           <Button onClick={loadDowntimeLogs} variant="outline" size="sm" disabled={isLoading}>
             <RefreshCw className="mr-2 h-4 w-4" /> {isLoading ? "Refreshing..." : "Refresh Logs"}
@@ -176,10 +186,11 @@ export default function DowntimePage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Unit ID</TableHead>
-                  <TableHead className="min-w-[150px]">Reason</TableHead>
+                  <TableHead className="min-w-[200px]">Reason</TableHead>
                   <TableHead>Start Time</TableHead>
                   <TableHead>End Time</TableHead>
                   <TableHead>Logged At</TableHead>
+                  <TableHead className="text-center">Details</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -191,6 +202,15 @@ export default function DowntimePage() {
                     <TableCell>{formatDateTime(log.startTime)}</TableCell>
                     <TableCell>{formatDateTime(log.endTime)}</TableCell>
                     <TableCell>{formatDateTime(log.loggedAt)}</TableCell>
+                    <TableCell className="text-center">
+                      {log.unsafeItems && log.unsafeItems.length > 0 ? (
+                        <Button variant="ghost" size="sm" onClick={() => handleOpenDetailsModal(log)}>
+                          <Eye className="mr-1 h-4 w-4" /> View
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground italic">N/A</span>
+                      )}
+                    </TableCell>
                     <TableCell className="text-right">
                       {!log.endTime ? (
                         <Button variant="outline" size="sm" onClick={() => handleOpenEditEndTimeModal(log)}>
@@ -210,6 +230,7 @@ export default function DowntimePage() {
         </CardContent>
       </Card>
 
+      {/* Edit End Time Modal */}
       <Dialog open={isEndTimeModalOpen} onOpenChange={setIsEndTimeModalOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -241,6 +262,58 @@ export default function DowntimePage() {
         </DialogContent>
       </Dialog>
 
+      {/* Unsafe Item Details Modal */}
+      <Dialog open={isDetailsModalOpen} onOpenChange={setIsDetailsModalOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Unsafe Item Details for Unit {selectedLogForDetails?.unitId}</DialogTitle>
+            <DialogDescription>
+              The following items were reported as unsafe during the inspection that triggered this downtime log.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedLogForDetails?.unsafeItems && selectedLogForDetails.unsafeItems.length > 0 ? (
+            <div className="py-4 max-h-[60vh] overflow-y-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Part Name</TableHead>
+                    <TableHead>Remarks</TableHead>
+                    <TableHead className="text-center">Photo</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {selectedLogForDetails.unsafeItems.map((item, index) => (
+                    <TableRow key={index}>
+                      <TableCell className="font-medium">{item.part_name}</TableCell>
+                      <TableCell>{item.remarks || <span className="text-xs text-muted-foreground italic">No remarks</span>}</TableCell>
+                      <TableCell className="text-center">
+                        <Image
+                          src={item.photo_url || PLACEHOLDER_IMAGE_DATA_URL}
+                          alt={item.part_name || 'Unsafe item image'}
+                          width={100}
+                          height={75}
+                          className="rounded-md object-cover mx-auto"
+                          data-ai-hint={item.part_name ? item.part_name.toLowerCase().split(' ').slice(0,2).join(' ') : "defect detail"}
+                          onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
+                        />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <p className="py-4 text-muted-foreground">No specific unsafe items were recorded with this downtime log.</p>
+          )}
+          <DialogFooter>
+            <DialogClose asChild>
+              <Button type="button" variant="outline">Close</Button>
+            </DialogClose>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
     </div>
   );
 }
+

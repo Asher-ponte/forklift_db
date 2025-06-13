@@ -1,6 +1,13 @@
 
 import type { InspectionRecordClientState } from './mock-data';
 
+// New interface for unsafe items within a downtime log
+export interface DowntimeUnsafeItem {
+  part_name: string;
+  remarks: string | null;
+  photo_url: string | null;
+}
+
 export interface InspectionReportFull {
   id: string; // Unique ID for the report
   unitId: string;
@@ -21,7 +28,9 @@ export interface DowntimeLogEntry {
   startTime: string; // ISO string
   endTime?: string | null; // ISO string, optional
   loggedAt: string; // ISO string, when the log was created by the user
+  unsafeItems?: DowntimeUnsafeItem[]; // Array of unsafe items from inspection
 }
 
 // This type will be used for what's stored in localStorage for downtime logs
 export type StoredDowntimeLog = DowntimeLogEntry;
+
