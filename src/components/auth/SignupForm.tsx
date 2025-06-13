@@ -6,13 +6,19 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { UserPlus, Eye, EyeOff, ShieldCheck, User } from 'lucide-react';
+import { UserPlus, Eye, EyeOff, ShieldCheck, User as UserIcon } from 'lucide-react'; // Renamed User to UserIcon
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { v4 as uuidv4 } from 'uuid';
+import type { User } from '@/context/AuthContext'; // Import User type
 
 type UserRole = 'operator' | 'supervisor';
+
+interface StoredUserAuthData extends User {
+  passwordHash: string; // In a real scenario, you'd store a hash, not plain text
+}
 
 export default function SignupForm() {
   const [username, setUsername] = useState('');
@@ -25,69 +31,65 @@ export default function SignupForm() {
   const { toast } = useToast();
   const router = useRouter();
 
+  const getStoredUsers = (): StoredUserAuthData[] => {
+    if (typeof window === 'undefined') return [];
+    const usersJson = localStorage.getItem('forkliftUsers');
+    return usersJson ? JSON.parse(usersJson) : [];
+  };
+
+  const saveStoredUsers = (users: StoredUserAuthData[]) => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem('forkliftUsers', JSON.stringify(users));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!username || !password || !confirmPassword) {
-      toast({
-        title: "Validation Error",
-        description: "Please fill in all fields.",
-        variant: "destructive",
-      });
+      toast({ title: "Validation Error", description: "Please fill in all fields.", variant: "destructive" });
+      return;
+    }
+    if (password.length < 6) {
+      toast({ title: "Validation Error", description: "Password must be at least 6 characters long.", variant: "destructive" });
       return;
     }
     if (password !== confirmPassword) {
-      toast({
-        title: "Validation Error",
-        description: "Passwords do not match.",
-        variant: "destructive",
-      });
+      toast({ title: "Validation Error", description: "Passwords do not match.", variant: "destructive" });
       return;
     }
 
     setIsSubmitting(true);
-    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
     try {
-      const response = await fetch(`${apiBaseUrl}/signup.php`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password, role }),
+      const storedUsers = getStoredUsers();
+      if (storedUsers.find(u => u.username.toLowerCase() === username.toLowerCase())) {
+        toast({ title: "Sign Up Failed", description: "Username already exists.", variant: "destructive" });
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Simulate password hashing for concept, in real app use bcrypt or similar
+      // For localStorage, we'll store it as is or a very simple "hash" for this temp purpose.
+      // Storing plain text passwords, even in localStorage, is not secure for production.
+      const newUser: StoredUserAuthData = {
+        id: uuidv4(),
+        username,
+        passwordHash: password, // Storing password directly for temporary local dev
+        role,
+      };
+
+      storedUsers.push(newUser);
+      saveStoredUsers(storedUsers);
+
+      toast({
+        title: "Sign Up Successful",
+        description: "Your account has been created locally. Please log in.",
       });
-
-      const contentType = response.headers.get("content-type");
-      let responseData;
-
-      if (contentType && contentType.includes("application/json")) {
-        responseData = await response.json();
-      } else {
-        const textResponse = await response.text();
-        // Attempt to show PHP error if HTML is returned
-        const shortError = textResponse.length > 150 ? textResponse.substring(0, 150) + "..." : textResponse;
-        throw new Error(`Server returned non-JSON response: ${shortError}`);
-      }
-
-      if (!response.ok) {
-        // Use message from JSON response if available, otherwise construct one
-        throw new Error(responseData.message || `Signup failed. Status: ${response.status}`);
-      }
-      
-      if (responseData.success) {
-        toast({
-          title: "Sign Up Successful",
-          description: responseData.message || "Your account has been created. Please log in.",
-        });
-        router.push('/login');
-      } else {
-        // Use message from JSON response if available
-        throw new Error(responseData.message || "An unknown error occurred during signup.");
-      }
+      router.push('/login');
 
     } catch (error) {
       toast({
         title: "Sign Up Failed",
-        description: (error instanceof Error) ? error.message : "An unknown error occurred.",
+        description: (error instanceof Error) ? error.message : "An unknown error occurred during local signup.",
         variant: "destructive",
       });
     } finally {
@@ -103,7 +105,7 @@ export default function SignupForm() {
             <UserPlus className="h-8 w-8 text-primary-foreground" />
           </div>
           <CardTitle className="font-headline text-3xl">Create Account</CardTitle>
-          <CardDescription>Join ForkLift Check</CardDescription>
+          <CardDescription>Join ForkLift Check (Local Mode)</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -125,7 +127,7 @@ export default function SignupForm() {
                 <Input
                   id="signup-password"
                   type={showPassword ? "text" : "password"}
-                  placeholder="Create a password"
+                  placeholder="Create a password (min 6 chars)"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
@@ -176,7 +178,7 @@ export default function SignupForm() {
                 <SelectContent>
                   <SelectItem value="operator">
                     <div className="flex items-center">
-                      <User className="mr-2 h-4 w-4 text-muted-foreground" />
+                      <UserIcon className="mr-2 h-4 w-4 text-muted-foreground" />
                       Operator
                     </div>
                   </SelectItem>

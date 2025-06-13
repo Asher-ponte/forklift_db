@@ -23,19 +23,20 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { v4 as uuidv4 } from 'uuid';
 
 // Mock Data for Departments and MHEs (Material Handling Equipment)
 // In a real app, this data would be fetched from the backend / Data Management page
+// For local storage mode, these could eventually be fetched from localStorage if DataManagementPage is also updated
 interface Department {
   id: string;
   name: string;
 }
 
 interface Mhe {
-  id: string; // This will be the "Unit ID"
-  name: string; // Display name for the MHE
+  id: string; 
+  name: string; 
   departmentId: string;
-  // type?: string; // e.g., 'Forklift', 'Pallet Jack' - could determine checklist in future
 }
 
 const MOCK_DEPARTMENTS: Department[] = [
@@ -54,10 +55,36 @@ const MOCK_MHES: Mhe[] = [
   { id: 'RE001', name: 'Reach Truck RE001', departmentId: 'receiving' },
 ];
 
+const REPORTS_STORAGE_KEY = 'forkliftInspectionReports';
+const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs';
+
+const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
+  if (typeof window === 'undefined') return defaultValue;
+  const item = localStorage.getItem(key);
+  if (item) {
+    try {
+      return JSON.parse(item) as T;
+    } catch (e) {
+      console.warn(`Error parsing localStorage item ${key}:`, e);
+      return defaultValue;
+    }
+  }
+  return defaultValue;
+};
+
+const saveToLocalStorage = <T>(key: string, value: T): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.error(`Error saving to localStorage item ${key}:`, e);
+  }
+};
+
 
 export default function InspectionPage() {
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('');
-  const [selectedMheId, setSelectedMheId] = useState<string>(''); // This will be our effective "unitId"
+  const [selectedMheId, setSelectedMheId] = useState<string>('');
   const [isInspectionSetupConfirmed, setIsInspectionSetupConfirmed] = useState(false);
 
   const [inspectionItems, setInspectionItems] = useState<InspectionRecordClientState[]>([]);
@@ -98,7 +125,6 @@ export default function InspectionPage() {
 
   useEffect(() => {
     if (isInspectionSetupConfirmed) {
-      // Reset only checklist items, not department/MHE selection
       resetInspectionState(false);
     }
   }, [isInspectionSetupConfirmed, resetInspectionState]);
@@ -139,7 +165,7 @@ export default function InspectionPage() {
   
   const handleDepartmentChange = (deptId: string) => {
     setSelectedDepartmentId(deptId);
-    setSelectedMheId(''); // Reset MHE when department changes
+    setSelectedMheId(''); 
   };
 
 
@@ -183,7 +209,7 @@ export default function InspectionPage() {
     const overallStatus = hasUnsafeItems ? 'Unsafe' : 'Safe';
     const reportDate = new Date().toISOString();
 
-    const reportItemsForAPI = inspectionItems.map(item => ({
+    const reportItemsForStorage = inspectionItems.map(item => ({
       checklistItemId: item.checklistItemId,
       part_name: item.part_name,
       question: item.question,
@@ -193,46 +219,28 @@ export default function InspectionPage() {
       remarks: item.remarks,
     }));
 
-    const newReportAPIData: Omit<StoredInspectionReport, 'id'> = {
-      unitId: selectedMheId, // Use the selected MHE ID as the unitId
+    const newReport: StoredInspectionReport = {
+      id: uuidv4(),
+      unitId: selectedMheId,
       date: reportDate,
       operator: user.username,
       status: overallStatus,
-      items: reportItemsForAPI,
+      items: reportItemsForStorage,
     };
 
     try {
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-      const response = await fetch(`${apiBaseUrl}/inspection_reports.php`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(newReportAPIData),
-      });
-
-      if (!response.ok) {
-        const contentType = response.headers.get("content-type");
-        let errorData;
-        if (contentType && contentType.includes("application/json")) {
-          errorData = await response.json().catch(() => ({ message: 'Failed to parse JSON error response from server.' }));
-        } else {
-          const textError = await response.text().catch(() => 'Unknown server error, non-JSON response from server.');
-          errorData = { message: `Server error submitting report (non-JSON): ${textError.substring(0, 200)}... Contact backend admin.` };
-        }
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-      }
-
-      const savedReport: StoredInspectionReport = await response.json();
+      const allReports = getFromLocalStorage<StoredInspectionReport[]>(REPORTS_STORAGE_KEY, []);
+      allReports.push(newReport);
+      saveToLocalStorage(REPORTS_STORAGE_KEY, allReports);
 
       toast({
         title: "Report Submitted",
-        description: `Inspection report for MHE ID ${savedReport.unitId} has been saved to the server.`,
+        description: `Inspection report for MHE ID ${newReport.unitId} has been saved to local storage.`,
       });
 
-      if (savedReport.status === 'Unsafe') {
-        const firstUnsafeItem = savedReport.items.find(item => !item.is_safe);
-        let downtimeReason = `MHE unit ${savedReport.unitId} deemed unsafe during inspection.`;
+      if (newReport.status === 'Unsafe') {
+        const firstUnsafeItem = newReport.items.find(item => !item.is_safe);
+        let downtimeReason = `MHE unit ${newReport.unitId} deemed unsafe during inspection.`;
         if (firstUnsafeItem) {
           downtimeReason = `Unsafe item: ${firstUnsafeItem.part_name}.`;
           if (firstUnsafeItem.remarks) {
@@ -240,44 +248,32 @@ export default function InspectionPage() {
           }
         }
 
-        const newDowntimeLogAPIData: Omit<StoredDowntimeLog, 'id' | 'endTime'> = {
-          unitId: savedReport.unitId,
+        const newDowntimeLog: StoredDowntimeLog = {
+          id: uuidv4(),
+          unitId: newReport.unitId,
           reason: downtimeReason,
           startTime: reportDate,
+          endTime: null,
           loggedAt: reportDate,
         };
+        
+        const allDowntimeLogs = getFromLocalStorage<StoredDowntimeLog[]>(DOWNTIME_STORAGE_KEY, []);
+        allDowntimeLogs.push(newDowntimeLog);
+        saveToLocalStorage(DOWNTIME_STORAGE_KEY, allDowntimeLogs);
 
-        const downtimeResponse = await fetch(`${apiBaseUrl}/downtime_logs.php`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json'},
-            body: JSON.stringify(newDowntimeLogAPIData)
+        toast({
+            title: "Downtime Logged",
+            description: `Downtime automatically logged for unsafe unit ${newReport.unitId} to local storage.`,
+            variant: "default"
         });
-
-        if(downtimeResponse.ok) {
-            toast({
-                title: "Downtime Logged",
-                description: `Downtime automatically logged for unsafe unit ${savedReport.unitId} on the server.`,
-                variant: "default"
-            });
-        } else {
-            const contentType = downtimeResponse.headers.get("content-type");
-            let downtimeError;
-            if (contentType && contentType.includes("application/json")) {
-                downtimeError = await downtimeResponse.json().catch(() => ({ message: 'Failed to parse JSON error for downtime log.'}));
-            } else {
-                const textError = await downtimeResponse.text().catch(() => 'Unknown server error for downtime log.');
-                downtimeError = { message: `Downtime log server error (non-JSON): ${textError.substring(0,200)}... Contact backend admin.`};
-            }
-            toast({title: "Downtime Log Error", description: downtimeError.message || "Failed to automatically log downtime.", variant: "destructive"})
-        }
       }
-      resetInspectionState(true); // Reset selections and items
+      resetInspectionState(true); 
 
     } catch (error) {
-      console.error("Error submitting report to server:", error);
+      console.error("Error submitting report to localStorage:", error);
       toast({
         title: "Submission Error",
-        description: (error instanceof Error) ? error.message : "Could not save data to the server.",
+        description: (error instanceof Error) ? error.message : "Could not save data to local storage.",
         variant: "destructive",
       });
     } finally {
@@ -342,7 +338,6 @@ export default function InspectionPage() {
     );
   }
 
-  // Rest of the inspection page (when isInspectionSetupConfirmed is true)
   const selectedMheDetails = MOCK_MHES.find(mhe => mhe.id === selectedMheId);
 
   return (
@@ -354,7 +349,7 @@ export default function InspectionPage() {
             Inspection: {selectedMheDetails?.name || selectedMheId}
           </CardTitle>
           <CardDescription>
-            Complete all checklist items to ensure equipment safety.
+            Complete all checklist items to ensure equipment safety. Data saved to local storage.
             {isInspectionComplete && " All items inspected."}
           </CardDescription>
         </CardHeader>
@@ -470,7 +465,7 @@ export default function InspectionPage() {
       <SafetyCheckModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        item={currentChecklistItemDetails} // This still uses MOCK_CHECKLIST_ITEMS
+        item={currentChecklistItemDetails} 
         onSubmit={handleInspectionSubmitForItem}
       />
 

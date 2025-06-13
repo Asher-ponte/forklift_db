@@ -18,8 +18,25 @@ interface DashboardStats {
   totalInspectionsToday: number;
   safeForkliftsToday: number;
   unsafeForkliftsToday: number;
-  upcomingInspections: number; // Stays mock for now
+  upcomingInspections: number;
 }
+
+const REPORTS_STORAGE_KEY = 'forkliftInspectionReports';
+const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs';
+
+const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
+  if (typeof window === 'undefined') return defaultValue;
+  const item = localStorage.getItem(key);
+  if (item) {
+    try {
+      return JSON.parse(item) as T;
+    } catch (e) {
+      console.warn(`Error parsing localStorage item ${key}:`, e);
+      return defaultValue;
+    }
+  }
+  return defaultValue;
+};
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -28,7 +45,7 @@ export default function DashboardPage() {
     totalInspectionsToday: 0,
     safeForkliftsToday: 0,
     unsafeForkliftsToday: 0,
-    upcomingInspections: 3, // Mock data
+    upcomingInspections: 3, // Mock data, can be made dynamic if needed
   });
   const [allReports, setAllReports] = useState<StoredInspectionReport[]>([]);
   const [allDowntimeLogs, setAllDowntimeLogs] = useState<StoredDowntimeLog[]>([]);
@@ -37,89 +54,11 @@ export default function DashboardPage() {
 
   const loadDashboardData = useCallback(async () => {
     setIsLoading(true);
-    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-
     try {
-      const [reportsResponse, downtimeResponse] = await Promise.all([
-        fetch(`${apiBaseUrl}/inspection_reports.php`),
-        fetch(`${apiBaseUrl}/downtime_logs.php`)
-      ]);
-
-      // Process Inspection Reports
-      let fetchedReports: StoredInspectionReport[] = [];
-      if (reportsResponse.ok) {
-        const reportsResponseText = await reportsResponse.text();
-        try {
-          const responseData = JSON.parse(reportsResponseText);
-          let reportsArray: any[] | undefined;
-
-          if (Array.isArray(responseData)) {
-            reportsArray = responseData;
-          } else if (responseData && Array.isArray(responseData.data)) {
-            reportsArray = responseData.data;
-          } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
-            reportsArray = [];
-          }
-
-          if (reportsArray) {
-            fetchedReports = reportsArray.map((report: any) => ({
-              ...report,
-              items: Array.isArray(report.items) ? report.items : [], 
-            }));
-          } else {
-            console.error("API returned an unexpected format for inspection reports (after parsing):", responseData);
-            toast({ title: "Data Format Error", description: "Unexpected data format received for inspection reports from server (after parsing).", variant: "destructive" });
-          }
-        } catch (jsonError) {
-          console.error("Failed to parse JSON response for inspection reports:", jsonError);
-          toast({
-            title: "API Response Error",
-            description: `Server sent an invalid response (expected JSON, got HTML/Text) for inspection reports. Check backend. Response: ${reportsResponseText.substring(0, 150)}...`,
-            variant: "destructive",
-            duration: 10000,
-          });
-        }
-      } else {
-        const errorText = await reportsResponse.text();
-        toast({ title: "Error Loading Reports", description: `Failed to fetch inspection reports: ${reportsResponse.status} ${errorText.substring(0,100)}`, variant: "destructive" });
-      }
+      const fetchedReports = getFromLocalStorage<StoredInspectionReport[]>(REPORTS_STORAGE_KEY, []);
+      const fetchedDowntimeLogs = getFromLocalStorage<StoredDowntimeLog[]>(DOWNTIME_STORAGE_KEY, []);
+      
       setAllReports(fetchedReports);
-
-      // Process Downtime Logs
-      let fetchedDowntimeLogs: StoredDowntimeLog[] = [];
-      if (downtimeResponse.ok) {
-        const downtimeResponseText = await downtimeResponse.text();
-        try {
-          const responseData = JSON.parse(downtimeResponseText);
-          let downtimeArray: any[] | undefined;
-          
-          if (Array.isArray(responseData)) {
-            downtimeArray = responseData;
-          } else if (responseData && Array.isArray(responseData.data)) {
-            downtimeArray = responseData.data;
-          } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
-            downtimeArray = [];
-          }
-
-          if (downtimeArray) {
-            fetchedDowntimeLogs = downtimeArray;
-          } else {
-            console.error("API returned an unexpected format for downtime logs (after parsing):", responseData);
-            toast({ title: "Data Format Error", description: "Unexpected data format received for downtime logs from server (after parsing).", variant: "destructive" });
-          }
-        } catch (jsonError) {
-          console.error("Failed to parse JSON response for downtime logs:", jsonError);
-          toast({
-            title: "API Response Error",
-            description: `Server sent an invalid response (expected JSON, got HTML/Text) for downtime logs. Check backend. Response: ${downtimeResponseText.substring(0, 150)}...`,
-            variant: "destructive",
-            duration: 10000,
-          });
-        }
-      } else {
-        const errorText = await downtimeResponse.text();
-        toast({ title: "Error Loading Downtime Logs", description: `Failed to fetch downtime logs: ${downtimeResponse.status} ${errorText.substring(0,100)}`, variant: "destructive" });
-      }
       setAllDowntimeLogs(fetchedDowntimeLogs);
 
       // Calculate Stats
@@ -159,22 +98,11 @@ export default function DashboardPage() {
         safeForkliftsToday: safeTodayCount,
         unsafeForkliftsToday: unsafeTodayCount,
       }));
+      toast({ title: "Dashboard Loaded", description: "Data loaded from local storage.", duration: 3000 });
 
     } catch (error) {
-      let description = "An unexpected error occurred while trying to connect to the backend API.";
-      if (error instanceof Error) {
-        description = error.message;
-        if (error.message.toLowerCase().includes('failed to fetch')) {
-          const localIpPattern = /^(http:\/\/)?(localhost|10\.|172\.(1[6-9]|2[0-9]|3[0-1])\.|192\.168\.)/;
-          if (apiBaseUrl && localIpPattern.test(apiBaseUrl) && !apiBaseUrl.includes('ngrok-free.app') && !apiBaseUrl.includes('loca.lt')) {
-            description = `Failed to connect to the API server at ${apiBaseUrl}. Please ensure your XAMPP/PHP server is running, accessible on your network, and your firewall is not blocking connections. If using a local IP, consider a tunneling service like ngrok or localtunnel for external access if needed. Original error: ${error.message}`;
-          } else {
-            description = `Failed to fetch data from the API at ${apiBaseUrl}. Please check your network connection, the server status, and ensure the tunnel (if used) is active. Original error: ${error.message}`;
-          }
-        }
-      }
-      console.error("Failed to load dashboard data from API:", error, "Attempted API Base URL:", apiBaseUrl);
-      toast({ title: "Dashboard Load Error", description, variant: "destructive", duration: 10000 });
+      console.error("Failed to load dashboard data from localStorage:", error);
+      toast({ title: "Dashboard Load Error", description: "Could not load data from local storage.", variant: "destructive" });
       setAllReports([]);
       setAllDowntimeLogs([]);
       setStats(prevStats => ({
@@ -197,7 +125,7 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
         <div>
           <h1 className="text-3xl font-headline font-bold">Welcome, {user?.username}!</h1>
-          <p className="text-muted-foreground">Here's an overview of your forklift operations.</p>
+          <p className="text-muted-foreground">Here's an overview of your forklift operations (Local Mode).</p>
         </div>
         <Button onClick={loadDashboardData} variant="outline" size="sm" className="mt-2 sm:mt-0" disabled={isLoading}>
           <RotateCcw className="mr-2 h-4 w-4" /> {isLoading ? "Refreshing..." : "Refresh Data"}
@@ -264,7 +192,7 @@ export default function DashboardPage() {
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle className="text-2xl font-headline font-bold">Unit History</CardTitle>
-          <CardDescription>Enter a Unit ID to view its inspection history.</CardDescription>
+          <CardDescription>Enter a Unit ID to view its inspection history from local storage.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="mb-4">
@@ -283,7 +211,4 @@ export default function DashboardPage() {
       </Card>
     </div>
   );
-
-    
 }
-

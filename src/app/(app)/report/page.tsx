@@ -33,6 +33,22 @@ interface ReportDisplayEntry {
   items: InspectionRecordClientState[];
 }
 
+const REPORTS_STORAGE_KEY = 'forkliftInspectionReports';
+
+const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
+  if (typeof window === 'undefined') return defaultValue;
+  const item = localStorage.getItem(key);
+  if (item) {
+    try {
+      return JSON.parse(item) as T;
+    } catch (e) {
+      console.warn(`Error parsing localStorage item ${key}:`, e);
+      return defaultValue;
+    }
+  }
+  return defaultValue;
+};
+
 export default function ReportPage() {
   const [allReports, setAllReports] = useState<ReportDisplayEntry[]>([]);
   const [filterUnitId, setFilterUnitId] = useState('');
@@ -40,8 +56,8 @@ export default function ReportPage() {
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
 
-  const processApiReportsToDisplayEntries = (reportsFromApi: StoredInspectionReport[]): ReportDisplayEntry[] => {
-    return reportsFromApi.map(report => {
+  const processReportsToDisplayEntries = (reportsFromStorage: StoredInspectionReport[]): ReportDisplayEntry[] => {
+    return reportsFromStorage.map(report => {
       let representativePhoto = PLACEHOLDER_IMAGE_DATA_URL;
       let hint = 'forklift general';
       if (report.status === 'Unsafe') {
@@ -75,76 +91,52 @@ export default function ReportPage() {
     }).sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
   };
 
-  const loadReportsFromAPI = useCallback(async () => {
+  const loadReports = useCallback(async () => {
     setIsLoading(true);
     try {
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-      const queryParams = new URLSearchParams();
-      if (filterUnitId) queryParams.append('unitId', filterUnitId);
-      if (filterDateRange.from) queryParams.append('dateFrom', new Date(filterDateRange.from).toISOString());
-      if (filterDateRange.to) {
-        const toDate = new Date(filterDateRange.to);
-        toDate.setHours(23, 59, 59, 999);
-        queryParams.append('dateTo', toDate.toISOString());
-      }
-
-      const response = await fetch(`${apiBaseUrl}/inspection_reports.php?${queryParams.toString()}`);
-
-      if (!response.ok) {
-        const contentType = response.headers.get("content-type");
-        let errorData;
-        if (contentType && contentType.includes("application/json")) {
-          errorData = await response.json().catch(() => ({ message: 'Failed to parse JSON error response from server.' }));
-        } else {
-          const textError = await response.text().catch(() => 'Unknown server error, non-JSON response from server.');
-          errorData = { message: `Server error (non-JSON): ${textError.substring(0, 200)}... Contact backend administrator.` };
-        }
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-      }
-
-      let reportsFromAPI: StoredInspectionReport[] | {} = await response.json();
-
-      // Handle case where API returns an empty object {} for no reports
-      if (typeof reportsFromAPI === 'object' && reportsFromAPI !== null && !Array.isArray(reportsFromAPI) && Object.keys(reportsFromAPI).length === 0) {
-        reportsFromAPI = [];
-      }
+      let reportsFromStorage = getFromLocalStorage<StoredInspectionReport[]>(REPORTS_STORAGE_KEY, []);
       
-      // Check if reportsFromAPI is an object with a 'data' property which is an array
-      if (typeof reportsFromAPI === 'object' && reportsFromAPI !== null && !Array.isArray(reportsFromAPI) && Array.isArray((reportsFromAPI as any).data)) {
-        reportsFromAPI = (reportsFromAPI as any).data;
-      }
-
-
-      if (!Array.isArray(reportsFromAPI)) {
-        console.error("API did not return an array for reports:", reportsFromAPI);
-        toast({ title: "Data Format Error", description: "Unexpected data format received for reports from server.", variant: "destructive" });
-        setAllReports([]); // Set to empty array on error
-      } else {
-        setAllReports(processApiReportsToDisplayEntries(reportsFromAPI as StoredInspectionReport[]));
-      }
+      setAllReports(processReportsToDisplayEntries(reportsFromStorage));
+      toast({ title: "Reports Loaded", description: "Data loaded from local storage.", duration: 3000 });
 
     } catch (error) {
-      console.error("Failed to fetch reports:", error);
-      toast({ title: "Error Loading Reports", description: (error instanceof Error) ? error.message : "Could not fetch reports from the server.", variant: "destructive" });
+      console.error("Failed to fetch reports from localStorage:", error);
+      toast({ title: "Error Loading Reports", description: (error instanceof Error) ? error.message : "Could not fetch reports from local storage.", variant: "destructive" });
       setAllReports([]);
     } finally {
       setIsLoading(false);
     }
-  }, [toast, filterUnitId, filterDateRange.from, filterDateRange.to]);
+  }, [toast]);
 
 
   useEffect(() => {
-    loadReportsFromAPI();
-  }, [loadReportsFromAPI]);
-
-  const handleFilterAndRefresh = () => {
-    loadReportsFromAPI();
-  };
+    loadReports();
+  }, [loadReports]);
 
 
   const filteredData = useMemo(() => {
-    return allReports;
-  }, [allReports]);
+    return allReports.filter(report => {
+      const unitIdMatch = filterUnitId ? report.unitId.toLowerCase().includes(filterUnitId.toLowerCase()) : true;
+      
+      let dateMatch = true;
+      if (filterDateRange.from || filterDateRange.to) {
+        const reportDateOnly = new Date(report.rawDate);
+        reportDateOnly.setHours(0,0,0,0);
+
+        if (filterDateRange.from) {
+          const fromDate = new Date(filterDateRange.from);
+          fromDate.setHours(0,0,0,0); // Normalize
+          if (reportDateOnly < fromDate) dateMatch = false;
+        }
+        if (filterDateRange.to && dateMatch) {
+          const toDate = new Date(filterDateRange.to);
+          toDate.setHours(23,59,59,999); // Normalize to end of day
+          if (reportDateOnly > toDate) dateMatch = false;
+        }
+      }
+      return unitIdMatch && dateMatch;
+    });
+  }, [allReports, filterUnitId, filterDateRange.from, filterDateRange.to]);
 
 
   const handleExportCsv = () => {
@@ -202,7 +194,7 @@ export default function ReportPage() {
             <FileText className="mr-3 h-8 w-8 text-primary" />
             Forklift Inspection Report
           </CardTitle>
-          <CardDescription>View and filter forklift inspection history. Reports are fetched from the backend server.</CardDescription>
+          <CardDescription>View and filter forklift inspection history from local storage.</CardDescription>
         </CardHeader>
       </Card>
 
@@ -249,8 +241,8 @@ export default function ReportPage() {
             <Button onClick={handleExportCsv} className="w-full sm:w-auto text-base">
               <Download className="mr-2 h-5 w-5" /> Export CSV
             </Button>
-            <Button onClick={handleFilterAndRefresh} variant="outline" className="w-full sm:w-auto text-base">
-              <RefreshCw className="mr-2 h-5 w-5" /> Apply Filters & Refresh
+            <Button onClick={loadReports} variant="outline" className="w-full sm:w-auto text-base">
+              <RefreshCw className="mr-2 h-5 w-5" /> Refresh Data
             </Button>
           </div>
         </CardContent>
@@ -383,7 +375,7 @@ export default function ReportPage() {
                   <tbody className="[&_tr:last-child]:border-0">
                     <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
                       <td colSpan={5} className="p-4 align-middle text-center py-10 text-muted-foreground">
-                        No inspection records found.
+                        No inspection records found with current filters.
                       </td>
                     </tr>
                   </tbody>
@@ -395,4 +387,3 @@ export default function ReportPage() {
     </div>
   );
 }
-

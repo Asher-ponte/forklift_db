@@ -19,6 +19,36 @@ import { z } from 'zod';
 import { PlusCircle, ListChecks, TruckIcon, Building, AlertTriangle, Loader2 } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
 import { Switch } from '@/components/ui/switch';
+import { v4 as uuidv4 } from 'uuid';
+
+// --- LocalStorage Keys ---
+const DEPARTMENTS_KEY = 'forkliftDepartments';
+const MHE_UNITS_KEY = 'forkliftMheUnits';
+const CHECKLIST_ITEMS_KEY = 'forkliftChecklistMasterItems';
+
+// --- Helper functions for localStorage ---
+const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
+  if (typeof window === 'undefined') return defaultValue;
+  const item = localStorage.getItem(key);
+  if (item) {
+    try {
+      return JSON.parse(item) as T;
+    } catch (e) {
+      console.warn(`Error parsing localStorage item ${key}:`, e);
+      return defaultValue;
+    }
+  }
+  return defaultValue;
+};
+
+const saveToLocalStorage = <T>(key: string, value: T): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.error(`Error saving to localStorage item ${key}:`, e);
+  }
+};
 
 
 // --- Data Types ---
@@ -33,7 +63,7 @@ interface MheUnit {
   unit_code: string;
   name: string;
   department_id?: string | null;
-  department_name?: string; // For display
+  department_name?: string; 
   type?: string | null;
   status?: 'active' | 'inactive' | 'maintenance';
 }
@@ -54,7 +84,7 @@ const departmentSchema = z.object({
 });
 type DepartmentFormData = z.infer<typeof departmentSchema>;
 
-const NONE_SELECT_VALUE = "__NONE__"; // For "None" option in select
+const NONE_SELECT_VALUE = "__NONE__"; 
 
 const mheUnitSchema = z.object({
   unit_code: z.string().min(1, "MHE Unit Code is required"),
@@ -79,7 +109,6 @@ export default function DataManagementPage() {
   const { user, loading: authLoading } = useAuth();
   const router = useRouter();
   const { toast } = useToast();
-  const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
   const [departments, setDepartments] = useState<Department[]>([]);
   const [mheUnits, setMheUnits] = useState<MheUnit[]>([]);
@@ -106,176 +135,54 @@ export default function DataManagementPage() {
 
   // --- Data Fetching Callbacks ---
   const fetchDepartments = useCallback(async () => {
-    if (!apiBaseUrl) {
-      toast({ title: "Configuration Error", description: "API base URL is not configured. Cannot fetch data.", variant: "destructive" });
-      setIsLoadingDepartments(false);
-      return;
-    }
     setIsLoadingDepartments(true);
-    let response: Response | undefined;
     try {
-      response = await fetch(`${apiBaseUrl}/departments_api.php?_cacheBust=${new Date().getTime()}`);
-      console.log('Fetch Departments Response Status:', response.status);
-      if (!response.ok) {
-        let errorText = "Server returned an error";
-        try {
-            errorText = await response.text();
-        } catch (e) { /* Ignore if .text() fails */ }
-        console.error(`Fetch error for departments: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
-        throw new Error(`Failed to fetch departments: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
-      }
-      
-      const responseData = await response.json();
-      let departmentsArray = [];
-
-      if (responseData && Array.isArray(responseData.data)) {
-        departmentsArray = responseData.data;
-      } else if (Array.isArray(responseData)) { 
-        departmentsArray = responseData;
-      } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
-        departmentsArray = [];
-      } else {
-        console.error('API returned an unexpected format for departments:', responseData);
-        toast({ title: "Data Format Error", description: "Unexpected data format received for departments from server.", variant: "destructive" });
-      }
-      console.log('Fetched Departments Data:', JSON.stringify(departmentsArray, null, 2));
-      setDepartments(departmentsArray);
-
+      const storedDepartments = getFromLocalStorage<Department[]>(DEPARTMENTS_KEY, []);
+      setDepartments(storedDepartments);
+      toast({ title: "Departments Loaded", description: "Data loaded from local storage.", duration: 2000 });
     } catch (error) {
-      console.error('Error in fetchDepartments:', error);
-      let errorMessage = "Could not fetch departments. Check console for details.";
-      if (error instanceof Error) {
-        errorMessage = error.message;
-        if (response && response.ok && (error.message.toLowerCase().includes("json") || error.message.toLowerCase().includes("unexpected token"))) {
-          try {
-            const rawText = await response.text();
-            console.error("Raw server response (fetchDepartments - JSON parse error):", rawText.substring(0, 500));
-            errorMessage = `Server returned non-JSON response for departments. PHP logs likely have details. Snippet: ${rawText.substring(0,100)}...`;
-          } catch (e) { /* failed to get raw text, original json error message is still fine */ }
-        }
-      }
-      toast({ title: "Error Fetching Departments", description: errorMessage, variant: "destructive" });
+      toast({ title: "Error Fetching Departments", description: "Could not load departments from local storage.", variant: "destructive" });
       setDepartments([]);
     } finally {
       setIsLoadingDepartments(false);
     }
-  }, [apiBaseUrl, toast]);
+  }, [toast]);
 
   const fetchMheUnits = useCallback(async () => {
-    if (!apiBaseUrl) {
-      setIsLoadingMheUnits(false);
-      return;
-    }
     setIsLoadingMheUnits(true);
-    let response: Response | undefined;
     try {
-      response = await fetch(`${apiBaseUrl}/mhe_units_api.php?_cacheBust=${new Date().getTime()}`);
-      console.log('Fetch MHE Units Response Status:', response.status);
-      if (!response.ok) {
-        let errorText = "Server returned an error";
-        try {
-            errorText = await response.text();
-        } catch (e) { /* Ignore if .text() fails */ }
-        console.error(`Fetch error for MHE units: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
-        throw new Error(`Failed to fetch MHE units: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
-      }
-
-      const responseData = await response.json();
-      let mheUnitsArray = [];
-
-      if (responseData && Array.isArray(responseData.data)) {
-        mheUnitsArray = responseData.data;
-      } else if (Array.isArray(responseData)) {
-        mheUnitsArray = responseData;
-      } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
-        mheUnitsArray = [];
-      } else {
-        console.error('API returned an unexpected format for MHE units:', responseData);
-        toast({ title: "Data Format Error", description: "Unexpected data format received for MHE units from server.", variant: "destructive" });
-      }
-      console.log('Fetched MHE Units Data (raw):', JSON.stringify(mheUnitsArray, null, 2));
+      const storedMheUnits = getFromLocalStorage<MheUnit[]>(MHE_UNITS_KEY, []);
+      const currentDepartments = getFromLocalStorage<Department[]>(DEPARTMENTS_KEY, []); // Fetch fresh departments for names
       
-      const enhancedData = Array.isArray(mheUnitsArray) ? mheUnitsArray.map(mhe => ({
+      const enhancedData = storedMheUnits.map(mhe => ({
         ...mhe,
-        department_name: departments.find(d => d.id === mhe.department_id)?.name || 'N/A'
-      })) : [];
-      console.log('Fetched MHE Units Data (enhanced):', JSON.stringify(enhancedData, null, 2));
+        department_name: currentDepartments.find(d => d.id === mhe.department_id)?.name || 'N/A'
+      }));
       setMheUnits(enhancedData);
-
+      toast({ title: "MHE Units Loaded", description: "Data loaded from local storage.", duration: 2000 });
     } catch (error) {
-      console.error('Error in fetchMheUnits:', error);
-      let errorMessage = "Could not fetch MHE units. Check console for details.";
-       if (error instanceof Error) {
-        errorMessage = error.message;
-        if (response && response.ok && (error.message.toLowerCase().includes("json") || error.message.toLowerCase().includes("unexpected token"))) {
-          try {
-            const rawText = await response.text();
-            console.error("Raw server response (fetchMheUnits - JSON parse error):", rawText.substring(0, 500));
-            errorMessage = `Server returned non-JSON response for MHE units. PHP logs likely have details. Snippet: ${rawText.substring(0,100)}...`;
-          } catch (e) { /* failed to get raw text, original json error message is still fine */ }
-        }
-      }
-      toast({ title: "Error Fetching MHE Units", description: errorMessage, variant: "destructive" });
+      toast({ title: "Error Fetching MHE Units", description: "Could not load MHE units from local storage.", variant: "destructive" });
       setMheUnits([]);
     } finally {
       setIsLoadingMheUnits(false);
     }
-  }, [apiBaseUrl, toast, departments]);
+  }, [toast]);
 
   const fetchChecklistItems = useCallback(async () => {
-     if (!apiBaseUrl) {
-      setIsLoadingChecklistItems(false);
-      return;
-    }
     setIsLoadingChecklistItems(true);
-    let response: Response | undefined;
     try {
-      response = await fetch(`${apiBaseUrl}/checklist_items_api.php?_cacheBust=${new Date().getTime()}`);
-      console.log('Fetch Checklist Items Response Status:', response.status);
-      if (!response.ok) {
-        let errorText = "Server returned an error";
-        try {
-            errorText = await response.text();
-        } catch (e) { /* Ignore if .text() fails */ }
-        console.error(`Fetch error for checklist items: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
-        throw new Error(`Failed to fetch checklist items: ${response.status} ${response.statusText}. Details: ${errorText.substring(0, 100)}`);
-      }
-      
-      const responseData = await response.json();
-      let checklistItemsArray = [];
-
-      if (responseData && Array.isArray(responseData.data)) {
-        checklistItemsArray = responseData.data;
-      } else if (Array.isArray(responseData)) {
-        checklistItemsArray = responseData;
-      } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
-        checklistItemsArray = [];
-      } else {
-        console.error('API returned an unexpected format for checklist items:', responseData);
-        toast({ title: "Data Format Error", description: "Unexpected data format received for checklist items from server.", variant: "destructive" });
-      }
-      console.log('Fetched Checklist Items Data:', JSON.stringify(checklistItemsArray, null, 2));
-      setChecklistItems(checklistItemsArray);
-
+      const storedChecklistItems = getFromLocalStorage<ChecklistMasterItem[]>(CHECKLIST_ITEMS_KEY, []);
+      setChecklistItems(storedChecklistItems);
+      // Note: The main inspection page uses MOCK_CHECKLIST_ITEMS. 
+      // These local storage checklist items are for management here but won't affect inspections unless InspectionPage is changed.
+      toast({ title: "Checklist Items Loaded", description: "Data loaded from local storage. (Note: Inspections use MOCK_CHECKLIST_ITEMS)", duration: 3000 });
     } catch (error) {
-      console.error('Error in fetchChecklistItems:', error);
-       let errorMessage = "Could not fetch checklist items. Check console for details.";
-       if (error instanceof Error) {
-        errorMessage = error.message;
-        if (response && response.ok && (error.message.toLowerCase().includes("json") || error.message.toLowerCase().includes("unexpected token"))) {
-          try {
-            const rawText = await response.text();
-            console.error("Raw server response (fetchChecklistItems - JSON parse error):", rawText.substring(0, 500));
-            errorMessage = `Server returned non-JSON response for checklist items. PHP logs likely have details. Snippet: ${rawText.substring(0,100)}...`;
-          } catch (e) { /* failed to get raw text, original json error message is still fine */ }
-        }
-      }
-      toast({ title: "Error Fetching Checklist Items", description: errorMessage, variant: "destructive" });
+      toast({ title: "Error Fetching Checklist Items", description: "Could not load checklist items from local storage.", variant: "destructive" });
       setChecklistItems([]);
     } finally {
       setIsLoadingChecklistItems(false);
     }
-  }, [apiBaseUrl, toast]);
+  }, [toast]);
 
   // --- Initial Data Load ---
   useEffect(() => {
@@ -287,7 +194,7 @@ export default function DataManagementPage() {
   
   useEffect(() => {
     if (user?.role === 'supervisor' && !isLoadingDepartments && departments.length >= 0) {
-         fetchMheUnits();
+         fetchMheUnits(); // Depends on departments for name mapping
     }
   }, [user, fetchMheUnits, isLoadingDepartments, departments]);
 
@@ -295,104 +202,62 @@ export default function DataManagementPage() {
   // --- Form Submission Handlers ---
   const onAddDepartment = async (data: DepartmentFormData) => {
     try {
-      const response = await fetch(`${apiBaseUrl}/departments_api.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        let errorData = { message: `Request failed: ${response.status} ${response.statusText}` };
-        if (response.status === 409) { 
-            throw new Error("Failed to add department. The department name may already exist. Please use a unique name.");
-        }
-        try {
-          const textResponse = await response.text();
-          try {
-            errorData = JSON.parse(textResponse);
-          } catch (e) {
-            throw new Error(textResponse ? `Server error: ${textResponse.substring(0,100)}...` : errorData.message);
-          }
-        } catch (e) {
-            if (e instanceof Error) throw e; 
-            throw new Error(errorData.message); 
-        }
-        throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
+      const currentDepartments = getFromLocalStorage<Department[]>(DEPARTMENTS_KEY, []);
+      if (currentDepartments.some(dept => dept.name.toLowerCase() === data.name.toLowerCase())) {
+        toast({ title: "Error Adding Department", description: "Department name already exists.", variant: "destructive" });
+        return;
       }
-      toast({ title: "Success", description: "Department added successfully." });
+      const newDepartment: Department = { id: uuidv4(), ...data };
+      currentDepartments.push(newDepartment);
+      saveToLocalStorage(DEPARTMENTS_KEY, currentDepartments);
+      
+      toast({ title: "Success", description: "Department added locally." });
       fetchDepartments(); 
       resetDeptForm();
       setIsAddDeptModalOpen(false);
     } catch (error) {
-      toast({ title: "Error Adding Department", description: (error instanceof Error) ? error.message : "Could not add department.", variant: "destructive" });
+      toast({ title: "Error Adding Department", description: (error instanceof Error) ? error.message : "Could not add department locally.", variant: "destructive" });
     }
   };
 
   const onAddMheUnit = async (data: MheUnitFormData) => {
     try {
-      const payload = {
+      const currentMheUnits = getFromLocalStorage<MheUnit[]>(MHE_UNITS_KEY, []);
+      if (currentMheUnits.some(mhe => mhe.unit_code.toLowerCase() === data.unit_code.toLowerCase())) {
+        toast({ title: "Error Adding MHE Unit", description: "MHE Unit Code already exists.", variant: "destructive" });
+        return;
+      }
+      const newMheUnit: MheUnit = {
+        id: uuidv4(),
         ...data,
         department_id: data.department_id === NONE_SELECT_VALUE ? null : data.department_id,
       };
-      const response = await fetch(`${apiBaseUrl}/mhe_units_api.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      if (!response.ok) {
-        let errorData = { message: `Request failed: ${response.status} ${response.statusText}` };
-         if (response.status === 409) { 
-            throw new Error("Failed to add MHE unit. The Unit Code may already exist. Please use a unique code.");
-          }
-        try {
-          const textResponse = await response.text();
-          try {
-            errorData = JSON.parse(textResponse);
-          } catch (e) {
-            throw new Error(textResponse ? `Server error: ${textResponse.substring(0,100)}...` : errorData.message);
-          }
-        } catch (e) {
-           if (e instanceof Error) throw e;
-           throw new Error(errorData.message);
-        }
-        throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
-      }
-      toast({ title: "Success", description: "MHE unit added successfully." });
+      currentMheUnits.push(newMheUnit);
+      saveToLocalStorage(MHE_UNITS_KEY, currentMheUnits);
+
+      toast({ title: "Success", description: "MHE unit added locally." });
       fetchMheUnits(); 
       resetMheForm();
       setIsAddMheModalOpen(false);
     } catch (error) {
-      toast({ title: "Error Adding MHE Unit", description: (error instanceof Error) ? error.message : "Could not add MHE unit.", variant: "destructive" });
+      toast({ title: "Error Adding MHE Unit", description: (error instanceof Error) ? error.message : "Could not add MHE unit locally.", variant: "destructive" });
     }
   };
 
   const onAddChecklistItem = async (data: ChecklistItemFormData) => {
     try {
-      const response = await fetch(`${apiBaseUrl}/checklist_items_api.php`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) {
-        let errorData = { message: `Request failed: ${response.status} ${response.statusText}` };
-        try {
-          const textResponse = await response.text();
-          try {
-            errorData = JSON.parse(textResponse);
-          } catch (e) {
-            throw new Error(textResponse ? `Server error: ${textResponse.substring(0,100)}...` : errorData.message);
-          }
-        } catch (e) {
-          if (e instanceof Error) throw e;
-          throw new Error(errorData.message);
-        }
-        throw new Error(errorData.message || `An unknown error occurred. Status: ${response.status}`);
-      }
-      toast({ title: "Success", description: "Checklist item added successfully." });
+      const currentChecklistItems = getFromLocalStorage<ChecklistMasterItem[]>(CHECKLIST_ITEMS_KEY, []);
+      // Optional: Add validation for uniqueness if needed, e.g., based on part_name or qr_code_data
+      const newChecklistItem: ChecklistMasterItem = { id: uuidv4(), ...data };
+      currentChecklistItems.push(newChecklistItem);
+      saveToLocalStorage(CHECKLIST_ITEMS_KEY, currentChecklistItems);
+
+      toast({ title: "Success", description: "Checklist item added locally." });
       fetchChecklistItems(); 
       resetItemForm();
       setIsAddItemModalOpen(false);
     } catch (error) {
-      toast({ title: "Error Adding Checklist Item", description: (error instanceof Error) ? error.message : "Could not add checklist item.", variant: "destructive" });
+      toast({ title: "Error Adding Checklist Item", description: (error instanceof Error) ? error.message : "Could not add checklist item locally.", variant: "destructive" });
     }
   };
 
@@ -430,7 +295,7 @@ export default function DataManagementPage() {
     <div className="space-y-8">
       <div>
         <h1 className="text-3xl font-headline font-bold">Data Management</h1>
-        <p className="text-muted-foreground">Oversee and manage core application data (Supervisor Access).</p>
+        <p className="text-muted-foreground">Oversee and manage core application data (Supervisor Access - Local Mode).</p>
       </div>
 
       <Tabs defaultValue="departments" className="w-full">
@@ -452,7 +317,7 @@ export default function DataManagementPage() {
             <CardHeader className="flex flex-row justify-between items-center">
               <div>
                 <CardTitle>Manage Departments</CardTitle>
-                <CardDescription>Define operational departments.</CardDescription>
+                <CardDescription>Define operational departments (stored locally).</CardDescription>
               </div>
               <Dialog open={isAddDeptModalOpen} onOpenChange={setIsAddDeptModalOpen}>
                 <DialogTrigger asChild>
@@ -492,7 +357,7 @@ export default function DataManagementPage() {
                   </TableBody>
                 </Table>
               )}
-              {!isLoadingDepartments && departments.length === 0 && <p className="text-center py-4 text-muted-foreground">No departments defined yet.</p>}
+              {!isLoadingDepartments && departments.length === 0 && <p className="text-center py-4 text-muted-foreground">No departments defined locally yet.</p>}
             </CardContent>
           </Card>
         </TabsContent>
@@ -503,7 +368,7 @@ export default function DataManagementPage() {
             <CardHeader className="flex flex-row justify-between items-center">
               <div>
                 <CardTitle>Manage MHE (Material Handling Equipment)</CardTitle>
-                <CardDescription>Add, view, and edit MHE units.</CardDescription>
+                <CardDescription>Add, view, and edit MHE units (stored locally).</CardDescription>
               </div>
                <Dialog open={isAddMheModalOpen} onOpenChange={setIsAddMheModalOpen}>
                 <DialogTrigger asChild>
@@ -542,7 +407,7 @@ export default function DataManagementPage() {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value={NONE_SELECT_VALUE}><em>None</em></SelectItem>
-                              {departments.map(dept => (
+                              {departments.map(dept => ( // departments are fetched from local storage
                                 <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
                               ))}
                             </SelectContent>
@@ -592,7 +457,7 @@ export default function DataManagementPage() {
                   </TableBody>
                 </Table>
               )}
-              {!isLoadingMheUnits && mheUnits.length === 0 && <p className="text-center py-4 text-muted-foreground">No MHE units defined yet.</p>}
+              {!isLoadingMheUnits && mheUnits.length === 0 && <p className="text-center py-4 text-muted-foreground">No MHE units defined locally yet.</p>}
             </CardContent>
           </Card>
         </TabsContent>
@@ -603,7 +468,7 @@ export default function DataManagementPage() {
             <CardHeader className="flex flex-row justify-between items-center">
               <div>
                 <CardTitle>Manage Inspection Checklist Items</CardTitle>
-                <CardDescription>Define items for inspection forms.</CardDescription>
+                <CardDescription>Define items for inspection forms (stored locally). Note: Inspections currently use hardcoded MOCK_CHECKLIST_ITEMS.</CardDescription>
               </div>
               <Dialog open={isAddItemModalOpen} onOpenChange={setIsAddItemModalOpen}>
                 <DialogTrigger asChild>
@@ -672,7 +537,7 @@ export default function DataManagementPage() {
                   </TableBody>
                 </Table>
               )}
-              {!isLoadingChecklistItems && checklistItems.length === 0 && <p className="text-center py-4 text-muted-foreground">No inspection items defined yet.</p>}
+              {!isLoadingChecklistItems && checklistItems.length === 0 && <p className="text-center py-4 text-muted-foreground">No inspection items defined locally yet.</p>}
             </CardContent>
           </Card>
         </TabsContent>
@@ -680,4 +545,3 @@ export default function DataManagementPage() {
     </div>
   );
 }
-

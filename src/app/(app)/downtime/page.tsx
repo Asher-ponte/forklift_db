@@ -14,6 +14,20 @@ import { RefreshCw, ListChecks, CheckSquare, Edit } from 'lucide-react';
 import type { StoredDowntimeLog } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 
+const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs';
+
+const getStoredDowntimeLogs = (): StoredDowntimeLog[] => {
+  if (typeof window === 'undefined') return [];
+  const logsJson = localStorage.getItem(DOWNTIME_STORAGE_KEY);
+  return logsJson ? JSON.parse(logsJson) : [];
+};
+
+const saveStoredDowntimeLogs = (logs: StoredDowntimeLog[]) => {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(DOWNTIME_STORAGE_KEY, JSON.stringify(logs));
+};
+
+
 export default function DowntimePage() {
   const [downtimeLogs, setDowntimeLogs] = useState<StoredDowntimeLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -25,39 +39,9 @@ export default function DowntimePage() {
   const loadDowntimeLogs = useCallback(async () => {
     setIsLoading(true);
     try {
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-      const response = await fetch(`${apiBaseUrl}/downtime_logs.php`);
-
-      if (!response.ok) {
-        const contentType = response.headers.get("content-type");
-        let errorData;
-        if (contentType && contentType.includes("application/json")) {
-          errorData = await response.json().catch(() => ({ message: 'Failed to parse JSON error response from server.' }));
-        } else {
-          const textError = await response.text().catch(() => 'Unknown server error, non-JSON response from server.');
-          errorData = { message: `Server error fetching downtime logs (non-JSON): ${textError.substring(0, 200)}... Contact backend admin.` };
-        }
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
-      }
+      const logsFromStorage = getStoredDowntimeLogs();
       
-      const responseData = await response.json();
-      let logsFromAPI: StoredDowntimeLog[] = [];
-
-      if (Array.isArray(responseData)) {
-        logsFromAPI = responseData;
-      } else if (responseData && Array.isArray(responseData.data)) {
-        logsFromAPI = responseData.data;
-      } else if (responseData && typeof responseData === 'object' && Object.keys(responseData).length === 0) {
-        // API returned an empty object {}, treat as no logs
-        logsFromAPI = [];
-      } else {
-        console.error("API returned an unexpected format for downtime logs:", responseData);
-        toast({ title: "Data Format Error", description: "Unexpected data format received for downtime logs from server.", variant: "destructive" });
-        logsFromAPI = []; // Default to empty on unexpected format
-      }
-      
-      // Basic validation, though backend should enforce this
-      const validLogs = logsFromAPI.filter(log =>
+      const validLogs = logsFromStorage.filter(log =>
         log && typeof log.id === 'string' && typeof log.unitId === 'string' &&
         typeof log.reason === 'string' && typeof log.startTime === 'string' &&
         typeof log.loggedAt === 'string' && (log.endTime === null || typeof log.endTime === 'string' || typeof log.endTime === 'undefined')
@@ -73,10 +57,11 @@ export default function DowntimePage() {
         });
 
       setDowntimeLogs(validLogs);
+      toast({ title: "Downtime Logs Loaded", description: "Data loaded from local storage.", duration: 3000 });
 
     } catch (error) {
-      console.error("An unexpected error occurred while loading or processing downtime logs from API:", error);
-      setDowntimeLogs([]); // Reset to a safe state
+      console.error("An unexpected error occurred while loading downtime logs from localStorage:", error);
+      setDowntimeLogs([]); 
       toast({
         title: "Error Loading Downtime Logs",
         description: (error instanceof Error) ? error.message : "An unexpected error occurred.",
@@ -141,36 +126,26 @@ export default function DowntimePage() {
     }
 
     try {
-      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-      const response = await fetch(`${apiBaseUrl}/downtime_logs.php?id=${selectedLogForEdit.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ endTime: currentEditingEndTime }), // Send only the endTime
-      });
+      const currentLogs = getStoredDowntimeLogs();
+      const logIndex = currentLogs.findIndex(log => log.id === selectedLogForEdit.id);
 
-      if (!response.ok) {
-        const contentType = response.headers.get("content-type");
-        let errorData;
-        if (contentType && contentType.includes("application/json")) {
-          errorData = await response.json().catch(() => ({ message: 'Failed to parse JSON error response from server.' }));
-        } else {
-          const textError = await response.text().catch(() => 'Unknown server error, non-JSON response from server.');
-          errorData = { message: `Server error updating end time (non-JSON): ${textError.substring(0, 200)}... Contact backend admin.` };
-        }
-        throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      if (logIndex === -1) {
+        toast({ title: "Update Error", description: "Log not found in local storage.", variant: "destructive" });
+        return;
       }
       
-      toast({ title: "Success", description: `End time updated for unit ${selectedLogForEdit.unitId} on the server.` });
+      currentLogs[logIndex].endTime = new Date(currentEditingEndTime).toISOString();
+      saveStoredDowntimeLogs(currentLogs);
       
-      loadDowntimeLogs(); // Refresh the list
+      toast({ title: "Success", description: `End time updated for unit ${selectedLogForEdit.unitId} in local storage.` });
+      
+      loadDowntimeLogs(); 
       setIsEndTimeModalOpen(false);
       setSelectedLogForEdit(null);
 
     } catch (error) {
-        console.error("Error updating end time on server:", error);
-        toast({ title: "Update Error", description: (error instanceof Error) ? error.message : "Could not update end time on the server.", variant: "destructive" });
+        console.error("Error updating end time in localStorage:", error);
+        toast({ title: "Update Error", description: (error instanceof Error) ? error.message : "Could not update end time locally.", variant: "destructive" });
     }
   };
 
@@ -185,7 +160,7 @@ export default function DowntimePage() {
               <ListChecks className="mr-3 h-7 w-7 text-primary" />
               Recent Downtime Logs
             </CardTitle>
-            <CardDescription>List of all recorded forklift downtime incidents from the server. Set end times to mark repairs as complete.</CardDescription>
+            <CardDescription>List of all recorded forklift downtime incidents from local storage. Set end times to mark repairs as complete.</CardDescription>
           </div>
           <Button onClick={loadDowntimeLogs} variant="outline" size="sm" disabled={isLoading}>
             <RefreshCw className="mr-2 h-4 w-4" /> {isLoading ? "Refreshing..." : "Refresh Logs"}
@@ -193,9 +168,9 @@ export default function DowntimePage() {
         </CardHeader>
         <CardContent>
           {isLoading ? (
-            <p className="text-center py-4">Loading downtime logs from server...</p>
+            <p className="text-center py-4">Loading downtime logs from local storage...</p>
           ) : downtimeLogs.length === 0 ? (
-            <p className="text-muted-foreground text-center py-4">No downtime logs recorded on the server yet.</p>
+            <p className="text-muted-foreground text-center py-4">No downtime logs recorded locally yet.</p>
           ) : (
             <Table>
               <TableHeader>
@@ -269,4 +244,3 @@ export default function DowntimePage() {
     </div>
   );
 }
-

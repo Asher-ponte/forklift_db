@@ -10,6 +10,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Truck, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
+import type { User } from '@/context/AuthContext'; // Import User type
+
+interface StoredUserAuthData extends User {
+  passwordHash: string;
+}
 
 export default function LoginForm() {
   const [username, setUsername] = useState('');
@@ -18,6 +23,12 @@ export default function LoginForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { login } = useAuth();
   const { toast } = useToast();
+
+  const getStoredUsers = (): StoredUserAuthData[] => {
+    if (typeof window === 'undefined') return [];
+    const usersJson = localStorage.getItem('forkliftUsers');
+    return usersJson ? JSON.parse(usersJson) : [];
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -30,47 +41,30 @@ export default function LoginForm() {
       return;
     }
     setIsSubmitting(true);
-    const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
 
     try {
-      const response = await fetch(`${apiBaseUrl}/login.php`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ username, password }),
-      });
+      const storedUsers = getStoredUsers();
+      const foundUser = storedUsers.find(u => u.username.toLowerCase() === username.toLowerCase());
 
-      const contentType = response.headers.get("content-type");
-      let responseData;
-
-      if (contentType && contentType.includes("application/json")) {
-        responseData = await response.json();
+      if (foundUser && foundUser.passwordHash === password) { // Direct password check for local dev
+        const userToLogin: User = {
+          id: foundUser.id,
+          username: foundUser.username,
+          role: foundUser.role,
+        };
+        await login(userToLogin);
+        // Success toast is handled by AuthContext
       } else {
-        const textResponse = await response.text();
-        throw new Error(`Server returned non-JSON response: ${textResponse.substring(0,100)}...`);
-      }
-
-      if (!response.ok) {
-        throw new Error(responseData.message || `Login failed. Status: ${response.status}`);
-      }
-
-      if (responseData.success && responseData.user && responseData.user.username && responseData.user.role) {
-        // Role validation to ensure it's one of the expected types
-        const userRole = responseData.user.role.toLowerCase();
-        if (userRole === 'operator' || userRole === 'supervisor') {
-          await login(responseData.user.username, userRole as 'operator' | 'supervisor');
-          // Success toast is now handled by AuthContext after health check
-        } else {
-          throw new Error(`Invalid user role received from server: ${responseData.user.role}`);
-        }
-      } else {
-        throw new Error(responseData.message || 'Login failed. Invalid response from server.');
+        toast({
+          title: "Login Failed",
+          description: "Invalid username or password (local check).",
+          variant: "destructive",
+        });
       }
     } catch (error) {
       toast({
         title: "Login Failed",
-        description: (error instanceof Error) ? error.message : "An unknown error occurred.",
+        description: (error instanceof Error) ? error.message : "An unknown error occurred during local login.",
         variant: "destructive",
       });
     } finally {
@@ -86,7 +80,7 @@ export default function LoginForm() {
             <Truck className="h-8 w-8 text-primary-foreground" />
           </div>
           <CardTitle className="font-headline text-3xl">ForkLift Check</CardTitle>
-          <CardDescription>Sign in to access your account</CardDescription>
+          <CardDescription>Sign in to access your account (Local Mode)</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">
