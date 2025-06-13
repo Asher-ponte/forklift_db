@@ -4,7 +4,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useAuth } from '@/context/AuthContext';
 import { Truck, LayoutDashboard, ScanLine, FileText, Clock, Wrench, LogOut, Menu, UserCircle, Database } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -128,12 +128,14 @@ export default function Navbar() {
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-72 p-0 flex flex-col">
-              <div className="p-4 border-b border-border">
-                <Link href="/dashboard" className="flex items-center" onClick={() => setIsMobileMenuOpen(false)}>
-                  <Truck className="h-7 w-7 text-primary" />
-                  <span className="ml-2 font-headline text-xl font-semibold">ForkLift Check</span>
-                </Link>
-              </div>
+              <SheetHeader className="p-4 border-b border-border text-left">
+                <SheetTitle>
+                  <Link href="/dashboard" className="flex items-center" onClick={() => setIsMobileMenuOpen(false)}>
+                    <Truck className="h-7 w-7 text-primary" />
+                    <span className="ml-2 font-headline text-xl font-semibold">ForkLift Check</span>
+                  </Link>
+                </SheetTitle>
+              </SheetHeader>
               <div className="flex-grow overflow-y-auto">
                 {renderNavLinks(true)}
               </div>
