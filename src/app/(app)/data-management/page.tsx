@@ -173,7 +173,7 @@ export default function DataManagementPage() {
     try {
       const storedChecklistItems = getFromLocalStorage<ChecklistMasterItem[]>(CHECKLIST_ITEMS_KEY, []);
       setChecklistItems(storedChecklistItems);
-      toast({ title: "Checklist Items Loaded", description: "Checklist items loaded from local storage. These items are used for inspections.", duration: 3000 });
+      toast({ title: "Checklist Items Loaded", description: "Checklist items loaded from local storage.", duration: 3000 });
     } catch (error) {
       toast({ title: "Error Fetching Checklist Items", description: "Could not load checklist items from local storage.", variant: "destructive" });
       setChecklistItems([]);
@@ -245,7 +245,6 @@ export default function DataManagementPage() {
   const onAddChecklistItem = async (data: ChecklistItemFormData) => {
     try {
       const currentChecklistItems = getFromLocalStorage<ChecklistMasterItem[]>(CHECKLIST_ITEMS_KEY, []);
-      // Optional: Add validation for uniqueness if needed, e.g., based on part_name or qr_code_data
       const newChecklistItem: ChecklistMasterItem = { id: uuidv4(), ...data };
       currentChecklistItems.push(newChecklistItem);
       saveToLocalStorage(CHECKLIST_ITEMS_KEY, currentChecklistItems);
@@ -312,14 +311,14 @@ export default function DataManagementPage() {
         {/* Departments Tab */}
         <TabsContent value="departments">
           <Card className="shadow-md">
-            <CardHeader className="flex flex-row justify-between items-center">
-              <div>
+            <CardHeader className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 md:gap-2">
+              <div className="flex-grow">
                 <CardTitle>Manage Departments</CardTitle>
                 <CardDescription>Define operational departments (stored locally).</CardDescription>
               </div>
               <Dialog open={isAddDeptModalOpen} onOpenChange={setIsAddDeptModalOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" onClick={() => { resetDeptForm(); setIsAddDeptModalOpen(true);}}><PlusCircle className="mr-2 h-4 w-4" /> Add Department</Button>
+                  <Button variant="outline" onClick={() => { resetDeptForm(); setIsAddDeptModalOpen(true);}} className="w-full md:w-auto mt-2 md:mt-0"><PlusCircle className="mr-2 h-4 w-4" /> Add Department</Button>
                 </DialogTrigger>
                 <DialogContent className="w-[95vw] max-w-md">
                   <DialogHeader>
@@ -365,14 +364,14 @@ export default function DataManagementPage() {
         {/* MHE Details Tab */}
         <TabsContent value="mheDetails">
           <Card className="shadow-md">
-            <CardHeader className="flex flex-row justify-between items-center">
-              <div>
+            <CardHeader className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 md:gap-2">
+              <div className="flex-grow">
                 <CardTitle>Manage MHE (Material Handling Equipment)</CardTitle>
                 <CardDescription>Add, view, and edit MHE units (stored locally).</CardDescription>
               </div>
                <Dialog open={isAddMheModalOpen} onOpenChange={setIsAddMheModalOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" onClick={() => { resetMheForm({status: 'active', department_id: null}); setIsAddMheModalOpen(true);}}><PlusCircle className="mr-2 h-4 w-4" /> Add MHE</Button>
+                  <Button variant="outline" onClick={() => { resetMheForm({status: 'active', department_id: null}); setIsAddMheModalOpen(true);}} className="w-full md:w-auto mt-2 md:mt-0"><PlusCircle className="mr-2 h-4 w-4" /> Add MHE</Button>
                 </DialogTrigger>
                 <DialogContent className="w-[95vw] max-w-md">
                   <DialogHeader>
@@ -407,7 +406,7 @@ export default function DataManagementPage() {
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value={NONE_SELECT_VALUE}><em>None</em></SelectItem>
-                              {departments.map(dept => ( // departments are fetched from local storage
+                              {departments.map(dept => ( 
                                 <SelectItem key={dept.id} value={dept.id}>{dept.name}</SelectItem>
                               ))}
                             </SelectContent>
@@ -467,14 +466,14 @@ export default function DataManagementPage() {
         {/* Inspection Items Tab */}
         <TabsContent value="inspectionItems">
           <Card className="shadow-md">
-            <CardHeader className="flex flex-row justify-between items-center">
-              <div>
+            <CardHeader className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 md:gap-2">
+              <div className="flex-grow">
                 <CardTitle>Manage Inspection Checklist Items</CardTitle>
-                <CardDescription>Define items for inspection forms (stored locally). These items will be used in actual inspections.</CardDescription>
+                <CardDescription>Define items for inspection forms (stored locally). These are used in inspections.</CardDescription>
               </div>
               <Dialog open={isAddItemModalOpen} onOpenChange={setIsAddItemModalOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" onClick={() => { resetItemForm({is_active: true}); setIsAddItemModalOpen(true);}}><PlusCircle className="mr-2 h-4 w-4" /> Add Item</Button>
+                  <Button variant="outline" onClick={() => { resetItemForm({is_active: true}); setIsAddItemModalOpen(true);}} className="w-full md:w-auto mt-2 md:mt-0"><PlusCircle className="mr-2 h-4 w-4" /> Add Item</Button>
                 </DialogTrigger>
                 <DialogContent className="w-[95vw] max-w-md">
                   <DialogHeader>
@@ -549,6 +548,3 @@ export default function DataManagementPage() {
     </div>
   );
 }
-
-
-    
