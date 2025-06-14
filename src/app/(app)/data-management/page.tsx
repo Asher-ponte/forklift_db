@@ -308,9 +308,9 @@ export default function DataManagementPage() {
         </TabsList>
 
         {/* Departments Tab */}
-        <TabsContent value="departments">
+        <TabsContent value="departments" className="mt-6">
           <Card className="shadow-md">
-            <CardHeader className="flex justify-end p-4 md:p-6">
+            <CardHeader className="flex flex-row justify-end p-4 md:p-6">
               <Dialog open={isAddDeptModalOpen} onOpenChange={setIsAddDeptModalOpen}>
                 <DialogTrigger asChild>
                   <Button variant="outline" onClick={() => { resetDeptForm(); setIsAddDeptModalOpen(true);}} className="w-full md:w-auto"><PlusCircle className="mr-2 h-4 w-4" /> Add Department</Button>
@@ -357,9 +357,9 @@ export default function DataManagementPage() {
         </TabsContent>
 
         {/* MHE Details Tab */}
-        <TabsContent value="mheDetails">
+        <TabsContent value="mheDetails" className="mt-6">
           <Card className="shadow-md">
-            <CardHeader className="flex justify-end p-4 md:p-6">
+            <CardHeader className="flex flex-row justify-end p-4 md:p-6">
                <Dialog open={isAddMheModalOpen} onOpenChange={setIsAddMheModalOpen}>
                 <DialogTrigger asChild>
                   <Button variant="outline" onClick={() => { resetMheForm({status: 'active', department_id: null}); setIsAddMheModalOpen(true);}} className="w-full md:w-auto"><PlusCircle className="mr-2 h-4 w-4" /> Add MHE</Button>
@@ -455,9 +455,9 @@ export default function DataManagementPage() {
         </TabsContent>
 
         {/* Inspection Items Tab */}
-        <TabsContent value="inspectionItems">
+        <TabsContent value="inspectionItems" className="mt-6">
           <Card className="shadow-md">
-            <CardHeader className="flex justify-end p-4 md:p-6">
+            <CardHeader className="flex flex-row justify-end p-4 md:p-6">
               <Dialog open={isAddItemModalOpen} onOpenChange={setIsAddItemModalOpen}>
                 <DialogTrigger asChild>
                   <Button variant="outline" onClick={() => { resetItemForm({is_active: true}); setIsAddItemModalOpen(true);}} className="w-full md:w-auto"><PlusCircle className="mr-2 h-4 w-4" /> Add Item</Button>
