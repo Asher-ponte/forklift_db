@@ -321,7 +321,7 @@ export default function DataManagementPage() {
                 <DialogTrigger asChild>
                   <Button variant="outline" onClick={() => { resetDeptForm(); setIsAddDeptModalOpen(true);}}><PlusCircle className="mr-2 h-4 w-4" /> Add Department</Button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent className="w-[95vw] max-w-md">
                   <DialogHeader>
                     <DialogTitle>Add New Department</DialogTitle>
                     <DialogDescription>Fill in the details for the new department.</DialogDescription>
@@ -346,14 +346,16 @@ export default function DataManagementPage() {
             </CardHeader>
             <CardContent>
               {isLoadingDepartments ? <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : (
-                <Table>
-                  <TableHeader><TableRow><TableHead>ID</TableHead><TableHead>Name</TableHead><TableHead>Description</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {departments.map((dept) => (
-                      <TableRow key={dept.id}><TableCell>{dept.id.substring(0,8)}...</TableCell><TableCell>{dept.name}</TableCell><TableCell>{dept.description || 'N/A'}</TableCell></TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader><TableRow><TableHead>ID</TableHead><TableHead>Name</TableHead><TableHead>Description</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {departments.map((dept) => (
+                        <TableRow key={dept.id}><TableCell>{dept.id.substring(0,8)}...</TableCell><TableCell>{dept.name}</TableCell><TableCell>{dept.description || 'N/A'}</TableCell></TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
               {!isLoadingDepartments && departments.length === 0 && <p className="text-center py-4 text-muted-foreground">No departments defined locally yet.</p>}
             </CardContent>
@@ -372,7 +374,7 @@ export default function DataManagementPage() {
                 <DialogTrigger asChild>
                   <Button variant="outline" onClick={() => { resetMheForm({status: 'active', department_id: null}); setIsAddMheModalOpen(true);}}><PlusCircle className="mr-2 h-4 w-4" /> Add MHE</Button>
                 </DialogTrigger>
-                <DialogContent>
+                <DialogContent className="w-[95vw] max-w-md">
                   <DialogHeader>
                     <DialogTitle>Add New MHE Unit</DialogTitle>
                     <DialogDescription>Fill in the details for the new MHE unit.</DialogDescription>
@@ -446,14 +448,16 @@ export default function DataManagementPage() {
             </CardHeader>
             <CardContent>
              {isLoadingMheUnits ? <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : (
-                <Table>
-                  <TableHeader><TableRow><TableHead>Unit Code</TableHead><TableHead>Name</TableHead><TableHead>Department</TableHead><TableHead>Type</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {mheUnits.map((mhe) => (
-                      <TableRow key={mhe.id}><TableCell>{mhe.unit_code}</TableCell><TableCell>{mhe.name}</TableCell><TableCell>{mhe.department_name || 'N/A'}</TableCell><TableCell>{mhe.type || 'N/A'}</TableCell><TableCell>{mhe.status || 'N/A'}</TableCell></TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader><TableRow><TableHead>Unit Code</TableHead><TableHead>Name</TableHead><TableHead>Department</TableHead><TableHead>Type</TableHead><TableHead>Status</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {mheUnits.map((mhe) => (
+                        <TableRow key={mhe.id}><TableCell>{mhe.unit_code}</TableCell><TableCell>{mhe.name}</TableCell><TableCell>{mhe.department_name || 'N/A'}</TableCell><TableCell>{mhe.type || 'N/A'}</TableCell><TableCell>{mhe.status || 'N/A'}</TableCell></TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
               {!isLoadingMheUnits && mheUnits.length === 0 && <p className="text-center py-4 text-muted-foreground">No MHE units defined locally yet.</p>}
             </CardContent>
@@ -472,7 +476,7 @@ export default function DataManagementPage() {
                 <DialogTrigger asChild>
                   <Button variant="outline" onClick={() => { resetItemForm({is_active: true}); setIsAddItemModalOpen(true);}}><PlusCircle className="mr-2 h-4 w-4" /> Add Item</Button>
                 </DialogTrigger>
-                <DialogContent className="sm:max-w-lg">
+                <DialogContent className="w-[95vw] max-w-md">
                   <DialogHeader>
                     <DialogTitle>Add New Inspection Item</DialogTitle>
                     <DialogDescription>Fill in the details for the new inspection checklist item.</DialogDescription>
@@ -521,19 +525,21 @@ export default function DataManagementPage() {
             </CardHeader>
             <CardContent>
             {isLoadingChecklistItems ? <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : (
-                <Table>
-                  <TableHeader><TableRow><TableHead className="w-[100px]">Part Name</TableHead><TableHead>Question</TableHead><TableHead>QR Data</TableHead><TableHead>Active</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {checklistItems.map((item) => (
-                      <TableRow key={item.id}>
-                        <TableCell>{item.part_name}</TableCell>
-                        <TableCell>{item.question}</TableCell>
-                        <TableCell>{item.qr_code_data || 'N/A'}</TableCell>
-                        <TableCell>{item.is_active ? 'Yes' : 'No'}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                <div className="overflow-x-auto">
+                  <Table>
+                    <TableHeader><TableRow><TableHead className="w-[100px]">Part Name</TableHead><TableHead>Question</TableHead><TableHead>QR Data</TableHead><TableHead>Active</TableHead></TableRow></TableHeader>
+                    <TableBody>
+                      {checklistItems.map((item) => (
+                        <TableRow key={item.id}>
+                          <TableCell>{item.part_name}</TableCell>
+                          <TableCell>{item.question}</TableCell>
+                          <TableCell>{item.qr_code_data || 'N/A'}</TableCell>
+                          <TableCell>{item.is_active ? 'Yes' : 'No'}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
               )}
               {!isLoadingChecklistItems && checklistItems.length === 0 && <p className="text-center py-4 text-muted-foreground">No inspection items defined locally yet.</p>}
             </CardContent>
@@ -544,3 +550,5 @@ export default function DataManagementPage() {
   );
 }
 
+
+    
