@@ -291,7 +291,7 @@ export default function DataManagementPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-headline font-bold">Data Management</h1>
+        <h1 className="text-2xl sm:text-3xl font-headline font-bold">Data Management</h1>
         <p className="text-muted-foreground">Oversee and manage core application data (Supervisor Access - Local Mode).</p>
       </div>
 
