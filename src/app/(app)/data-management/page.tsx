@@ -296,14 +296,14 @@ export default function DataManagementPage() {
       </div>
 
       <Tabs defaultValue="departments" className="w-full">
-        <TabsList className="grid w-full grid-cols-1 md:grid-cols-3 mb-6">
-          <TabsTrigger value="departments" className="py-3 text-base">
+        <TabsList className="grid w-full grid-cols-1 md:grid-cols-3 mb-4">
+          <TabsTrigger value="departments" className="py-2.5 text-sm">
             <Building className="mr-2 h-5 w-5"/> Departments
           </TabsTrigger>
-          <TabsTrigger value="mheDetails" className="py-3 text-base">
+          <TabsTrigger value="mheDetails" className="py-2.5 text-sm">
             <TruckIcon className="mr-2 h-5 w-5"/> MHE Details
           </TabsTrigger>
-          <TabsTrigger value="inspectionItems" className="py-3 text-base">
+          <TabsTrigger value="inspectionItems" className="py-2.5 text-sm">
             <ListChecks className="mr-2 h-5 w-5"/> Inspection Items
           </TabsTrigger>
         </TabsList>
@@ -311,10 +311,10 @@ export default function DataManagementPage() {
         {/* Departments Tab */}
         <TabsContent value="departments">
           <Card className="shadow-md">
-            <CardHeader className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 md:gap-2">
+            <CardHeader className="flex flex-col gap-2 p-4 md:flex-row md:justify-between md:items-center md:p-6">
               <div className="flex-grow">
-                <CardTitle>Manage Departments</CardTitle>
-                <CardDescription>Define operational departments (stored locally).</CardDescription>
+                <CardTitle className="text-xl md:text-2xl">Manage Departments</CardTitle>
+                <CardDescription className="mt-1 md:mt-0">Define operational departments (stored locally).</CardDescription>
               </div>
               <Dialog open={isAddDeptModalOpen} onOpenChange={setIsAddDeptModalOpen}>
                 <DialogTrigger asChild>
@@ -343,7 +343,7 @@ export default function DataManagementPage() {
                 </DialogContent>
               </Dialog>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 md:p-6 pt-0">
               {isLoadingDepartments ? <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : (
                 <div className="overflow-x-auto">
                   <Table>
@@ -364,10 +364,10 @@ export default function DataManagementPage() {
         {/* MHE Details Tab */}
         <TabsContent value="mheDetails">
           <Card className="shadow-md">
-            <CardHeader className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 md:gap-2">
+            <CardHeader className="flex flex-col gap-2 p-4 md:flex-row md:justify-between md:items-center md:p-6">
               <div className="flex-grow">
-                <CardTitle>Manage MHE (Material Handling Equipment)</CardTitle>
-                <CardDescription>Add, view, and edit MHE units (stored locally).</CardDescription>
+                <CardTitle className="text-xl md:text-2xl">Manage MHE (Material Handling Equipment)</CardTitle>
+                <CardDescription className="mt-1 md:mt-0">Add, view, and edit MHE units (stored locally).</CardDescription>
               </div>
                <Dialog open={isAddMheModalOpen} onOpenChange={setIsAddMheModalOpen}>
                 <DialogTrigger asChild>
@@ -445,7 +445,7 @@ export default function DataManagementPage() {
                 </DialogContent>
               </Dialog>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 md:p-6 pt-0">
              {isLoadingMheUnits ? <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : (
                 <div className="overflow-x-auto">
                   <Table>
@@ -466,10 +466,10 @@ export default function DataManagementPage() {
         {/* Inspection Items Tab */}
         <TabsContent value="inspectionItems">
           <Card className="shadow-md">
-            <CardHeader className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 md:gap-2">
+            <CardHeader className="flex flex-col gap-2 p-4 md:flex-row md:justify-between md:items-center md:p-6">
               <div className="flex-grow">
-                <CardTitle>Manage Inspection Checklist Items</CardTitle>
-                <CardDescription>Define items for inspection forms (stored locally). These are used in inspections.</CardDescription>
+                <CardTitle className="text-xl md:text-2xl">Manage Inspection Checklist Items</CardTitle>
+                <CardDescription className="mt-1 md:mt-0">Define items for inspection forms (stored locally). These are used in inspections.</CardDescription>
               </div>
               <Dialog open={isAddItemModalOpen} onOpenChange={setIsAddItemModalOpen}>
                 <DialogTrigger asChild>
@@ -522,7 +522,7 @@ export default function DataManagementPage() {
                 </DialogContent>
               </Dialog>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-4 md:p-6 pt-0">
             {isLoadingChecklistItems ? <div className="flex justify-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary"/></div> : (
                 <div className="overflow-x-auto">
                   <Table>
@@ -548,3 +548,4 @@ export default function DataManagementPage() {
     </div>
   );
 }
+
