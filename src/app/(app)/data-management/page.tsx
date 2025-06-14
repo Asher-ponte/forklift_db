@@ -292,7 +292,6 @@ export default function DataManagementPage() {
     <div className="space-y-8">
       <div>
         <h1 className="text-2xl sm:text-3xl font-headline font-bold">Data Management</h1>
-        <p className="text-muted-foreground">Oversee and manage core application data (Supervisor Access - Local Mode).</p>
       </div>
 
       <Tabs defaultValue="departments" className="w-full">
@@ -311,14 +310,10 @@ export default function DataManagementPage() {
         {/* Departments Tab */}
         <TabsContent value="departments">
           <Card className="shadow-md">
-            <CardHeader className="flex flex-col gap-2 p-4 md:flex-row md:justify-between md:items-center md:p-6">
-              <div className="flex-grow">
-                <CardTitle className="text-xl md:text-2xl">Manage Departments</CardTitle>
-                <CardDescription className="mt-1 md:mt-0">Define operational departments (stored locally).</CardDescription>
-              </div>
+            <CardHeader className="flex justify-end p-4 md:p-6">
               <Dialog open={isAddDeptModalOpen} onOpenChange={setIsAddDeptModalOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" onClick={() => { resetDeptForm(); setIsAddDeptModalOpen(true);}} className="w-full md:w-auto mt-2 md:mt-0"><PlusCircle className="mr-2 h-4 w-4" /> Add Department</Button>
+                  <Button variant="outline" onClick={() => { resetDeptForm(); setIsAddDeptModalOpen(true);}} className="w-full md:w-auto"><PlusCircle className="mr-2 h-4 w-4" /> Add Department</Button>
                 </DialogTrigger>
                 <DialogContent className="w-[95vw] max-w-md">
                   <DialogHeader>
@@ -364,14 +359,10 @@ export default function DataManagementPage() {
         {/* MHE Details Tab */}
         <TabsContent value="mheDetails">
           <Card className="shadow-md">
-            <CardHeader className="flex flex-col gap-2 p-4 md:flex-row md:justify-between md:items-center md:p-6">
-              <div className="flex-grow">
-                <CardTitle className="text-xl md:text-2xl">Manage MHE (Material Handling Equipment)</CardTitle>
-                <CardDescription className="mt-1 md:mt-0">Add, view, and edit MHE units (stored locally).</CardDescription>
-              </div>
+            <CardHeader className="flex justify-end p-4 md:p-6">
                <Dialog open={isAddMheModalOpen} onOpenChange={setIsAddMheModalOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" onClick={() => { resetMheForm({status: 'active', department_id: null}); setIsAddMheModalOpen(true);}} className="w-full md:w-auto mt-2 md:mt-0"><PlusCircle className="mr-2 h-4 w-4" /> Add MHE</Button>
+                  <Button variant="outline" onClick={() => { resetMheForm({status: 'active', department_id: null}); setIsAddMheModalOpen(true);}} className="w-full md:w-auto"><PlusCircle className="mr-2 h-4 w-4" /> Add MHE</Button>
                 </DialogTrigger>
                 <DialogContent className="w-[95vw] max-w-md">
                   <DialogHeader>
@@ -466,14 +457,10 @@ export default function DataManagementPage() {
         {/* Inspection Items Tab */}
         <TabsContent value="inspectionItems">
           <Card className="shadow-md">
-            <CardHeader className="flex flex-col gap-2 p-4 md:flex-row md:justify-between md:items-center md:p-6">
-              <div className="flex-grow">
-                <CardTitle className="text-xl md:text-2xl">Manage Inspection Checklist Items</CardTitle>
-                <CardDescription className="mt-1 md:mt-0">Define items for inspection forms (stored locally). These are used in inspections.</CardDescription>
-              </div>
+            <CardHeader className="flex justify-end p-4 md:p-6">
               <Dialog open={isAddItemModalOpen} onOpenChange={setIsAddItemModalOpen}>
                 <DialogTrigger asChild>
-                  <Button variant="outline" onClick={() => { resetItemForm({is_active: true}); setIsAddItemModalOpen(true);}} className="w-full md:w-auto mt-2 md:mt-0"><PlusCircle className="mr-2 h-4 w-4" /> Add Item</Button>
+                  <Button variant="outline" onClick={() => { resetItemForm({is_active: true}); setIsAddItemModalOpen(true);}} className="w-full md:w-auto"><PlusCircle className="mr-2 h-4 w-4" /> Add Item</Button>
                 </DialogTrigger>
                 <DialogContent className="w-[95vw] max-w-md">
                   <DialogHeader>
