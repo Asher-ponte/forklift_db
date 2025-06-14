@@ -13,7 +13,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle, Send, Edit3, Warehouse, TruckIcon, Loader2 } from 'lucide-react';
-import Link from 'next/link'; // Added missing import
+import Link from 'next/link';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,7 +25,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { v4 as uuidv4 } from 'uuid';
 
-// --- LocalStorage Helper (already present, ensure it's robust) ---
+// --- LocalStorage Helper ---
 const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
   if (typeof window === 'undefined') return defaultValue;
   const item = localStorage.getItem(key);
@@ -49,8 +49,22 @@ const saveToLocalStorage = <T>(key: string, value: T): void => {
   }
 };
 
-// --- Data Types ---
-// This type should align with what's stored by DataManagementPage
+// --- Data Types from Data Management ---
+interface Department {
+  id: string;
+  name: string;
+  description?: string | null;
+}
+
+interface MheUnit {
+  id: string; // uuid
+  unit_code: string;
+  name: string;
+  department_id?: string | null;
+  type?: string | null;
+  status?: 'active' | 'inactive' | 'maintenance';
+}
+
 interface ChecklistMasterItem {
   id: string;
   qr_code_data?: string | null;
@@ -59,34 +73,6 @@ interface ChecklistMasterItem {
   question: string;
   is_active?: boolean;
 }
-
-interface Department {
-  id: string;
-  name: string;
-}
-
-interface Mhe {
-  id: string;
-  name: string;
-  departmentId: string;
-}
-
-// Mock Data for Departments and MHEs (remains the same)
-const MOCK_DEPARTMENTS: Department[] = [
-  { id: 'warehouse-a', name: 'Warehouse A' },
-  { id: 'production-floor', name: 'Production Floor' },
-  { id: 'shipping', name: 'Shipping Department' },
-  { id: 'receiving', name: 'Receiving Area' },
-];
-
-const MOCK_MHES: Mhe[] = [
-  { id: 'FL001', name: 'Forklift FL001 (Alpha)', departmentId: 'warehouse-a' },
-  { id: 'FL002', name: 'Forklift FL002 (Bravo)', departmentId: 'warehouse-a' },
-  { id: 'PJ001', name: 'Pallet Jack PJ001', departmentId: 'production-floor' },
-  { id: 'FL003', name: 'Forklift FL003 (Delta)', departmentId: 'shipping' },
-  { id: 'FL004', name: 'Forklift FL004 (Echo)', departmentId: 'production-floor' },
-  { id: 'RE001', name: 'Reach Truck RE001', departmentId: 'receiving' },
-];
 
 export interface InspectionRecordClientState {
   checklistItemId: string;
@@ -101,11 +87,17 @@ export interface InspectionRecordClientState {
 
 const REPORTS_STORAGE_KEY = 'forkliftInspectionReports';
 const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs';
-const CHECKLIST_ITEMS_KEY = 'forkliftChecklistMasterItems'; // Key used by Data Management
+const CHECKLIST_ITEMS_KEY = 'forkliftChecklistMasterItems';
+const DEPARTMENTS_KEY = 'forkliftDepartments';
+const MHE_UNITS_KEY = 'forkliftMheUnits';
 
 export default function InspectionPage() {
+  const [departments, setDepartments] = useState<Department[]>([]);
+  const [mheUnits, setMheUnits] = useState<MheUnit[]>([]);
+  const [isLoadingInitialData, setIsLoadingInitialData] = useState(true);
+
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('');
-  const [selectedMheId, setSelectedMheId] = useState<string>('');
+  const [selectedMheId, setSelectedMheId] = useState<string>(''); // This will store the MHE's unique id (uuid)
   const [isInspectionSetupConfirmed, setIsInspectionSetupConfirmed] = useState(false);
   
   const [masterChecklist, setMasterChecklist] = useState<ChecklistMasterItem[]>([]);
@@ -119,12 +111,32 @@ export default function InspectionPage() {
   const { toast } = useToast();
   const { user } = useAuth();
 
+  // Load Departments and MHE Units from localStorage
+  useEffect(() => {
+    setIsLoadingInitialData(true);
+    try {
+      const storedDepartments = getFromLocalStorage<Department[]>(DEPARTMENTS_KEY, []);
+      const storedMheUnits = getFromLocalStorage<MheUnit[]>(MHE_UNITS_KEY, []);
+      setDepartments(storedDepartments);
+      setMheUnits(storedMheUnits);
+      if (storedDepartments.length === 0) {
+        toast({ title: "No Departments", description: "No departments found. Please configure them in Data Management.", variant: "default", duration: 5000 });
+      }
+    } catch (error) {
+      toast({ title: "Error Loading Setup Data", description: "Could not load departments or MHE units.", variant: "destructive" });
+      setDepartments([]);
+      setMheUnits([]);
+    } finally {
+      setIsLoadingInitialData(false);
+    }
+  }, []);
+
   const filteredMHEs = useMemo(() => {
     if (!selectedDepartmentId) return [];
-    return MOCK_MHES.filter(mhe => mhe.departmentId === selectedDepartmentId);
-  }, [selectedDepartmentId]);
+    return mheUnits.filter(mhe => mhe.department_id === selectedDepartmentId && mhe.status !== 'inactive');
+  }, [selectedDepartmentId, mheUnits]);
 
-  // Load checklist items from localStorage
+  // Load checklist items from localStorage when inspection setup is confirmed
   useEffect(() => {
     if (isInspectionSetupConfirmed) {
       setIsLoadingChecklist(true);
@@ -137,12 +149,10 @@ export default function InspectionPage() {
         setMasterChecklist([]);
         toast({
           title: "No Checklist Items",
-          description: "No active inspection items found. Please configure them in Data Management. Inspection cannot proceed.",
+          description: "No active inspection items found for the MHE type or globally. Please configure them in Data Management. Inspection cannot proceed.",
           variant: "destructive",
           duration: 7000
         });
-        // Optionally, you might want to prevent further inspection steps if masterChecklist is empty.
-        // For now, the UI will show "0 items" and no way to inspect.
       }
       setIsLoadingChecklist(false);
     }
@@ -167,19 +177,16 @@ export default function InspectionPage() {
       setSelectedDepartmentId('');
       setSelectedMheId('');
       setIsInspectionSetupConfirmed(false);
-      setMasterChecklist([]); // Clear loaded checklist when setup is reset
+      setMasterChecklist([]); 
     }
   }, [masterChecklist]);
 
 
   useEffect(() => {
-    // This effect triggers resetInspectionState when masterChecklist is loaded and setup is confirmed.
-    // Or clears inspection if masterChecklist is empty after trying to load.
     if (isInspectionSetupConfirmed) {
       if (masterChecklist.length > 0) {
         resetInspectionState(false);
-      } else if (!isLoadingChecklist) { // Ensure not to reset while still loading
-        // If masterChecklist is empty and not loading, implies no items found
+      } else if (!isLoadingChecklist) { 
         setInspectionItems([]);
         setCurrentItemIdToInspect(null);
       }
@@ -209,9 +216,9 @@ export default function InspectionPage() {
     if (!foundItem) return null;
     return {
       id: foundItem.id,
-      qr_code_data: foundItem.qr_code_data || '', // Default for modal
+      qr_code_data: foundItem.qr_code_data || '', 
       part_name: foundItem.part_name,
-      description: foundItem.description || 'No description provided.', // Default for modal
+      description: foundItem.description || 'No description provided.', 
       question: foundItem.question,
     };
   }, [currentItemIdToInspect, masterChecklist]);
@@ -225,7 +232,7 @@ export default function InspectionPage() {
       toast({ title: "Error", description: "Please select an MHE ID.", variant: "destructive"});
       return;
     }
-    setIsInspectionSetupConfirmed(true); // This will trigger checklist loading
+    setIsInspectionSetupConfirmed(true); 
   };
   
   const handleDepartmentChange = (deptId: string) => {
@@ -267,6 +274,10 @@ export default function InspectionPage() {
     !inspectionItems.find(iItem => iItem.checklistItemId === mItem.id)?.completed
   ), [masterChecklist, inspectionItems]);
 
+  const selectedMheDetails = useMemo(() => {
+    return mheUnits.find(mhe => mhe.id === selectedMheId);
+  }, [selectedMheId, mheUnits]);
+
   const handleSubmitReport = async () => {
     if (!isInspectionComplete || !user || !selectedMheId || totalItemsCount === 0) {
         if (totalItemsCount === 0) {
@@ -291,7 +302,7 @@ export default function InspectionPage() {
 
     const newReport: StoredInspectionReport = {
       id: uuidv4(),
-      unitId: selectedMheId,
+      unitId: selectedMheDetails?.unit_code || selectedMheId, // Prefer unit_code for report
       date: reportDate,
       operator: user.username,
       status: overallStatus,
@@ -305,7 +316,7 @@ export default function InspectionPage() {
 
       toast({
         title: "Report Submitted",
-        description: `Inspection report for MHE ID ${newReport.unitId} has been saved to local storage.`,
+        description: `Inspection report for MHE ${newReport.unitId} has been saved to local storage.`,
       });
 
       if (newReport.status === 'Unsafe') {
@@ -356,6 +367,15 @@ export default function InspectionPage() {
     }
   };
 
+  if (isLoadingInitialData) {
+    return (
+      <div className="flex h-[calc(100vh-200px)] items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="ml-3 text-muted-foreground">Loading setup data...</p>
+      </div>
+    );
+  }
+
   if (!isInspectionSetupConfirmed) {
     return (
       <div className="space-y-8 flex flex-col items-center justify-center min-h-[calc(100vh-200px)]">
@@ -370,16 +390,16 @@ export default function InspectionPage() {
           <CardContent className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="departmentSelect" className="flex items-center"><Warehouse className="mr-2 h-4 w-4 text-muted-foreground"/>Department</Label>
-              <Select value={selectedDepartmentId} onValueChange={handleDepartmentChange}>
+              <Select value={selectedDepartmentId} onValueChange={handleDepartmentChange} disabled={departments.length === 0}>
                 <SelectTrigger id="departmentSelect" className="w-full text-base">
-                  <SelectValue placeholder="Select a department..." />
+                  <SelectValue placeholder={departments.length === 0 ? "No departments defined" : "Select a department..."} />
                 </SelectTrigger>
                 <SelectContent>
-                  {MOCK_DEPARTMENTS.map(dept => (
+                  {departments.length > 0 ? departments.map(dept => (
                     <SelectItem key={dept.id} value={dept.id} className="text-base py-2">
                       {dept.name}
                     </SelectItem>
-                  ))}
+                  )) : <div className="p-4 text-center text-sm text-muted-foreground">No departments available. <Link href="/data-management" className="text-primary hover:underline">Add Departments</Link></div>}
                 </SelectContent>
               </Select>
             </div>
@@ -388,33 +408,42 @@ export default function InspectionPage() {
               <Label htmlFor="mheSelect" className="flex items-center"><TruckIcon className="mr-2 h-4 w-4 text-muted-foreground"/>MHE ID</Label>
               <Select value={selectedMheId} onValueChange={setSelectedMheId} disabled={!selectedDepartmentId || filteredMHEs.length === 0}>
                 <SelectTrigger id="mheSelect" className="w-full text-base">
-                  <SelectValue placeholder={!selectedDepartmentId ? "Select department first" : "Select an MHE ID..."} />
+                  <SelectValue placeholder={!selectedDepartmentId ? "Select department first" : (filteredMHEs.length === 0 ? "No MHEs in department" : "Select an MHE ID...")} />
                 </SelectTrigger>
                 <SelectContent>
                   {filteredMHEs.length > 0 ? (
                     filteredMHEs.map(mhe => (
                       <SelectItem key={mhe.id} value={mhe.id} className="text-base py-2">
-                        {mhe.name} ({mhe.id})
+                        {mhe.name} ({mhe.unit_code})
                       </SelectItem>
                     ))
                   ) : selectedDepartmentId ? (
-                     <div className="p-4 text-center text-sm text-muted-foreground">No MHEs found for this department.</div>
+                     <div className="p-4 text-center text-sm text-muted-foreground">No MHEs found for this department. <Link href="/data-management" className="text-primary hover:underline">Add MHE Units</Link></div>
                   ) : null}
                 </SelectContent>
               </Select>
             </div>
             
-            <Button onClick={handleStartInspectionSetup} size="lg" className="w-full text-base py-3" disabled={!selectedDepartmentId || !selectedMheId || isLoadingChecklist}>
+            <Button onClick={handleStartInspectionSetup} size="lg" className="w-full text-base py-3" disabled={!selectedDepartmentId || !selectedMheId || isLoadingChecklist || (departments.length === 0 || filteredMHEs.length === 0 && !!selectedDepartmentId) }>
               {isLoadingChecklist ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
-              Start Inspection for {selectedMheId || "Selected MHE"}
+              Start Inspection for {selectedMheDetails?.unit_code || "Selected MHE"}
             </Button>
+             {departments.length === 0 && (
+                <p className="text-sm text-center text-muted-foreground">
+                    Please add Departments in <Link href="/data-management" className="text-primary hover:underline">Data Management</Link> first.
+                </p>
+            )}
+            {selectedDepartmentId && filteredMHEs.length === 0 && departments.length > 0 && (
+                 <p className="text-sm text-center text-muted-foreground">
+                    No MHE units available in the selected department. Add them in <Link href="/data-management" className="text-primary hover:underline">Data Management</Link>.
+                </p>
+            )}
           </CardContent>
         </Card>
       </div>
     );
   }
 
-  const selectedMheDetails = MOCK_MHES.find(mhe => mhe.id === selectedMheId);
 
   if (isLoadingChecklist) {
     return (
@@ -431,7 +460,7 @@ export default function InspectionPage() {
         <CardHeader>
           <CardTitle className="font-headline text-3xl flex items-center">
             <ListChecks className="mr-3 h-8 w-8 text-primary" />
-            Inspection: {selectedMheDetails?.name || selectedMheId}
+            Inspection: {selectedMheDetails?.name || selectedMheDetails?.unit_code || selectedMheId}
           </CardTitle>
           <CardDescription>
             Complete all checklist items to ensure equipment safety. Data saved to local storage.
@@ -529,7 +558,7 @@ export default function InspectionPage() {
             </CardContent>
           </Card>
         </>
-      ) : ( // isInspectionComplete is true and totalItemsCount > 0
+      ) : ( 
         <div className="text-center mt-8 space-y-6">
           <Card className="shadow-lg w-full max-w-md mx-auto">
             <CardHeader className="text-center">
@@ -539,7 +568,7 @@ export default function InspectionPage() {
                  <CheckCircle className="mx-auto h-16 w-16 text-green-500 mb-3" />
                )}
               <CardTitle className="font-headline text-2xl">
-                Inspection Complete for {selectedMheDetails?.name || selectedMheId}!
+                Inspection Complete for {selectedMheDetails?.name || selectedMheDetails?.unit_code || selectedMheId}!
               </CardTitle>
               <CardDescription>
                 Overall Status: <span className={hasUnsafeItems ? "font-bold text-destructive" : "font-bold text-green-600"}>{hasUnsafeItems ? "UNSAFE" : "SAFE"}</span>.
@@ -555,7 +584,7 @@ export default function InspectionPage() {
                 Start New Inspection (Different MHE/Dept)
               </Button>
                <Button onClick={() => resetInspectionState(false)} size="lg" variant="outline" className="w-full text-base py-3">
-                Inspect Same MHE Again ({selectedMheDetails?.name || selectedMheId})
+                Inspect Same MHE Again ({selectedMheDetails?.name || selectedMheDetails?.unit_code || selectedMheId})
               </Button>
             </CardContent>
           </Card>
@@ -565,7 +594,7 @@ export default function InspectionPage() {
       <SafetyCheckModal
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
-        item={currentChecklistItemDetails} // This is now mapped from ChecklistMasterItem
+        item={currentChecklistItemDetails} 
         onSubmit={handleInspectionSubmitForItem}
       />
 
@@ -590,4 +619,5 @@ export default function InspectionPage() {
     </div>
   );
 }
+
 
