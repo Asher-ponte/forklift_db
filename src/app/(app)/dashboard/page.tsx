@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/context/AuthContext';
 import { Input } from '@/components/ui/input';
-import { CheckCircle, AlertTriangle, Clock, ScanLine, RotateCcw } from 'lucide-react';
+import { CheckCircle, AlertTriangle, ScanLine, RotateCcw } from 'lucide-react';
 import Link from 'next/link';
 import type { StoredInspectionReport, StoredDowntimeLog } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
@@ -18,7 +18,6 @@ interface DashboardStats {
   totalInspectionsToday: number;
   safeForkliftsToday: number;
   unsafeForkliftsToday: number;
-  upcomingInspections: number;
 }
 
 const REPORTS_STORAGE_KEY = 'forkliftInspectionReports';
@@ -45,7 +44,6 @@ export default function DashboardPage() {
     totalInspectionsToday: 0,
     safeForkliftsToday: 0,
     unsafeForkliftsToday: 0,
-    upcomingInspections: 3, // Mock data, can be made dynamic if needed
   });
   const [allReports, setAllReports] = useState<StoredInspectionReport[]>([]);
   const [allDowntimeLogs, setAllDowntimeLogs] = useState<StoredDowntimeLog[]>([]);
@@ -133,7 +131,7 @@ export default function DashboardPage() {
       </div>
       
 
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3"> {/* Updated grid to lg:grid-cols-3 */}
         <Card className="shadow-md hover:shadow-lg transition-shadow">
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Inspections Today</CardTitle>
@@ -161,16 +159,6 @@ export default function DashboardPage() {
           <CardContent>
             {isLoading ? <div className="text-2xl font-bold animate-pulse">--</div> : <div className="text-2xl font-bold">{stats.unsafeForkliftsToday}</div>}
             <p className="text-xs text-muted-foreground">Latest inspection today is 'Unsafe'</p>
-          </CardContent>
-        </Card>
-        <Card className="shadow-md hover:shadow-lg transition-shadow">
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Upcoming Inspections</CardTitle>
-            <Clock className="h-5 w-5 text-blue-500" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{stats.upcomingInspections}</div>
-            <p className="text-xs text-muted-foreground">Scheduled (mock data)</p>
           </CardContent>
         </Card>
       </div>
