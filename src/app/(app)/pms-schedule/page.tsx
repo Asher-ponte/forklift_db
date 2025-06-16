@@ -8,7 +8,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose, DialogTrigger } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -70,7 +70,13 @@ type PmsTaskMasterFormData = z.infer<typeof pmsTaskMasterSchema>;
 const pmsScheduleEntrySchema = z.object({
   mhe_unit_id: z.string().min(1, "MHE Unit is required"),
   pms_task_master_id: z.string().min(1, "PMS Task is required"),
-  due_date: z.string().refine((val) => isValid(parseISO(val)), { message: "Valid due date is required" }),
+  due_date: z.string().refine((val) => {
+    try {
+      return isValid(parseISO(val));
+    } catch {
+      return false;
+    }
+  }, { message: "Valid due date is required" }),
 });
 type PmsScheduleEntryFormData = z.infer<typeof pmsScheduleEntrySchema>;
 
@@ -99,7 +105,7 @@ export default function PmsSchedulePage() {
   const [filterDueDateStart, setFilterDueDateStart] = useState<string>('');
   const [filterDueDateEnd, setFilterDueDateEnd] = useState<string>('');
 
-  const { register: registerMasterTask, handleSubmit: handleSubmitMasterTask, reset: resetMasterTaskForm, formState: { errors: masterTaskErrors } } = useForm<PmsTaskMasterFormData>({
+  const { control: controlMasterTask, register: registerMasterTask, handleSubmit: handleSubmitMasterTask, reset: resetMasterTaskForm, formState: { errors: masterTaskErrors } } = useForm<PmsTaskMasterFormData>({
     resolver: zodResolver(pmsTaskMasterSchema), defaultValues: { is_active: true, frequency_unit: 'days' }
   });
   const { control: controlScheduleEntry, handleSubmit: handleSubmitScheduleEntry, reset: resetScheduleEntryForm, formState: { errors: scheduleEntryErrors } } = useForm<PmsScheduleEntryFormData>({
@@ -146,9 +152,11 @@ export default function PmsSchedulePage() {
       const today = new Date();
       today.setHours(0,0,0,0); 
       const updatedEntries = fetchedScheduleEntries.map(entry => {
-        if (entry.status === 'Pending' && parseISO(entry.due_date) < today) {
-          return { ...entry, status: 'Overdue' as 'Pending' | 'In Progress' | 'Completed' | 'Overdue' | 'Skipped' };
-        }
+        try {
+          if (entry.status === 'Pending' && parseISO(entry.due_date) < today) {
+            return { ...entry, status: 'Overdue' as 'Pending' | 'In Progress' | 'Completed' | 'Overdue' | 'Skipped' };
+          }
+        } catch(e){ /* Ignore invalid date format for status update */ }
         return entry;
       });
       setScheduleEntries(updatedEntries);
@@ -209,19 +217,22 @@ export default function PmsSchedulePage() {
             try {
               const dueDate = parseISO(entry.due_date);
               if (filterDueDateStart && dueDate < parseISO(filterDueDateStart)) dateMatch = false;
-              // Adjust end date to be inclusive of the whole day
               if (filterDueDateEnd) {
                   const endDate = parseISO(filterDueDateEnd);
                   endDate.setHours(23, 59, 59, 999);
                   if (dueDate > endDate) dateMatch = false;
               }
             } catch (e) {
-              dateMatch = false; // Invalid date in entry or filter
+              dateMatch = false; 
             }
         }
         return mheMatch && statusMatch && dateMatch;
       })
-      .sort((a, b) => parseISO(a.due_date).getTime() - parseISO(b.due_date).getTime());
+      .sort((a, b) => {
+        try {
+            return parseISO(a.due_date).getTime() - parseISO(b.due_date).getTime();
+        } catch (e) { return 0; }
+      });
   }, [scheduleEntries, mheUnits, taskMasters, filterMheId, filterStatus, filterDueDateStart, filterDueDateEnd]);
 
   const handleOpenCompleteModal = (entry: PmsScheduleDisplayEntry) => {
@@ -263,7 +274,7 @@ export default function PmsSchedulePage() {
         : entry
     );
     saveToLocalStorage(PMS_SCHEDULE_ENTRIES_KEY, updatedEntries);
-    setScheduleEntries(updatedEntries);
+    
     toast({ title: "Task Completed", description: `${selectedEntryForCompletion.task_name} for ${selectedEntryForCompletion.mhe_unit_code} marked as complete.` });
     
     const completedTaskMaster = taskMasters.find(tm => tm.id === selectedEntryForCompletion.pms_task_master_id);
@@ -283,13 +294,13 @@ export default function PmsSchedulePage() {
         due_date: format(nextDueDate, 'yyyy-MM-dd'),
         status: 'Pending',
       };
-      const allEntries = getFromLocalStorage<StoredPmsScheduleEntry[]>(PMS_SCHEDULE_ENTRIES_KEY, []);
+      const allEntries = getFromLocalStorage<StoredPmsScheduleEntry[]>(PMS_SCHEDULE_ENTRIES_KEY, []); // get fresh copy for update
       allEntries.push(newScheduleEntry);
       saveToLocalStorage(PMS_SCHEDULE_ENTRIES_KEY, allEntries);
-      fetchScheduleEntriesCallback(); 
+      
       toast({title: "Next Task Scheduled", description: `Next ${completedTaskMaster.name} for ${selectedEntryForCompletion.mhe_unit_code} scheduled for ${format(nextDueDate, 'P')}.`});
     }
-
+    fetchScheduleEntriesCallback(); // This will re-fetch and include the new entry and updated old one
     setIsCompleteModalOpen(false);
     setSelectedEntryForCompletion(null);
     setCompletionNotes('');
@@ -302,13 +313,13 @@ export default function PmsSchedulePage() {
         toast({ title: "Error Adding Task", description: "A master task with this name already exists.", variant: "destructive" });
         return;
       }
-      const newTaskMaster: StoredPmsTaskMaster = { id: uuidv4(), ...data };
+      const newTaskMaster: StoredPmsTaskMaster = { id: uuidv4(), ...data, estimated_duration_minutes: data.estimated_duration_minutes || null };
       currentMasterTasks.push(newTaskMaster);
       saveToLocalStorage(PMS_TASK_MASTER_KEY, currentMasterTasks);
       
       toast({ title: "Success", description: "Master PMS Task added locally." });
       fetchTaskMastersCallback(); 
-      resetMasterTaskForm({is_active: true, frequency_unit: 'days'});
+      resetMasterTaskForm({is_active: true, frequency_unit: 'days', frequency_value:1, name: '', description: '', category: '', estimated_duration_minutes: undefined });
       setIsAddMasterTaskModalOpen(false);
     } catch (error) {
       toast({ title: "Error Adding Master Task", description: (error instanceof Error) ? error.message : "Could not add master task.", variant: "destructive" });
@@ -317,11 +328,19 @@ export default function PmsSchedulePage() {
   
   const onAddScheduleEntry = async (data: PmsScheduleEntryFormData) => {
     try {
+      let formattedDueDate;
+      try {
+        formattedDueDate = format(parseISO(data.due_date), 'yyyy-MM-dd');
+      } catch {
+        toast({ title: "Error Adding Schedule", description: "Invalid due date format.", variant: "destructive"});
+        return;
+      }
+
       const newSchedule: StoredPmsScheduleEntry = { 
         id: uuidv4(), 
         ...data, 
         status: 'Pending',
-        due_date: format(parseISO(data.due_date), 'yyyy-MM-dd') // Ensure correct date format
+        due_date: formattedDueDate
       };
       const currentScheduleEntries = getFromLocalStorage<StoredPmsScheduleEntry[]>(PMS_SCHEDULE_ENTRIES_KEY, []);
       currentScheduleEntries.push(newSchedule);
@@ -329,7 +348,7 @@ export default function PmsSchedulePage() {
       
       toast({ title: "Success", description: "New PMS schedule entry added locally." });
       fetchScheduleEntriesCallback(); 
-      resetScheduleEntryForm();
+      resetScheduleEntryForm({mhe_unit_id: '', pms_task_master_id: '', due_date: ''});
       setIsAddScheduleModalOpen(false);
     } catch (error) {
       toast({ title: "Error Adding Schedule", description: (error instanceof Error) ? error.message : "Could not add schedule entry.", variant: "destructive" });
@@ -396,7 +415,7 @@ export default function PmsSchedulePage() {
             <div>
                 <Label htmlFor="filterMhe">MHE Unit</Label>
                 <Select 
-                  value={filterMheId} 
+                  value={filterMheId || ALL_MHES_SELECT_VALUE} 
                   onValueChange={(selectedValue) => setFilterMheId(selectedValue === ALL_MHES_SELECT_VALUE ? '' : selectedValue)}
                   disabled={mheUnits.length === 0}
                 >
@@ -410,7 +429,7 @@ export default function PmsSchedulePage() {
             <div>
                 <Label htmlFor="filterStatus">Status</Label>
                 <Select 
-                  value={filterStatus} 
+                  value={filterStatus || ALL_STATUS_SELECT_VALUE} 
                   onValueChange={(selectedValue) => setFilterStatus(selectedValue === ALL_STATUS_SELECT_VALUE ? '' : selectedValue)}
                 >
                     <SelectTrigger id="filterStatus"><SelectValue placeholder="All Statuses" /></SelectTrigger>
@@ -436,7 +455,7 @@ export default function PmsSchedulePage() {
           <CardTitle className="text-xl">Scheduled Tasks</CardTitle>
           <Dialog open={isAddScheduleModalOpen} onOpenChange={setIsAddScheduleModalOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" onClick={() => { resetScheduleEntryForm(); setIsAddScheduleModalOpen(true); }} disabled={mheUnits.length === 0 || taskMasters.filter(tm => tm.is_active).length === 0}>
+              <Button variant="outline" onClick={() => { resetScheduleEntryForm({mhe_unit_id: '', pms_task_master_id: '', due_date: ''}); setIsAddScheduleModalOpen(true); }} disabled={mheUnits.length === 0 || taskMasters.filter(tm => tm.is_active).length === 0}>
                   <PlusCircle className="mr-2 h-4 w-4"/> Add New Schedule
               </Button>
             </DialogTrigger>
@@ -533,7 +552,7 @@ export default function PmsSchedulePage() {
                     </TableCell>
                     <TableCell>{entry.task_name}</TableCell>
                     <TableCell>{entry.task_category || 'N/A'}</TableCell>
-                    <TableCell>{format(parseISO(entry.due_date), 'PP')}</TableCell>
+                    <TableCell>{entry.due_date ? format(parseISO(entry.due_date), 'PP') : 'N/A'}</TableCell>
                     <TableCell>
                       <Badge className={getStatusBadgeColor(entry.status)} variant={getStatusBadgeVariant(entry.status)}>
                         {entry.status}
@@ -564,7 +583,7 @@ export default function PmsSchedulePage() {
             </div>
              <Dialog open={isAddMasterTaskModalOpen} onOpenChange={setIsAddMasterTaskModalOpen}>
                 <DialogTrigger asChild>
-                    <Button variant="outline" onClick={() => { resetMasterTaskForm({is_active: true, frequency_unit: 'days'}); setIsAddMasterTaskModalOpen(true);}}>
+                    <Button variant="outline" onClick={() => { resetMasterTaskForm({is_active: true, frequency_unit: 'days', frequency_value:1, name: '', description: '', category: '', estimated_duration_minutes: undefined }); setIsAddMasterTaskModalOpen(true);}}>
                         <PlusCircle className="mr-2 h-4 w-4"/> Add Master Task
                     </Button>
                 </DialogTrigger>
@@ -588,7 +607,7 @@ export default function PmsSchedulePage() {
                                 <Label htmlFor="masterTaskFreqUnit">Frequency Unit</Label>
                                  <Controller
                                     name="frequency_unit"
-                                    control={registerMasterTask.control}
+                                    control={controlMasterTask}
                                     render={({ field }) => (
                                         <Select onValueChange={field.onChange} value={field.value} >
                                             <SelectTrigger id="masterTaskFreqUnit" className="mt-1">
@@ -622,7 +641,7 @@ export default function PmsSchedulePage() {
                          <div className="flex items-center space-x-2 pt-2">
                             <Controller
                                 name="is_active"
-                                control={registerMasterTask.control}
+                                control={controlMasterTask}
                                 render={({ field }) => (
                                     <Switch id="masterTaskIsActive" checked={field.value} onCheckedChange={field.onChange} />
                                 )}
@@ -678,7 +697,7 @@ export default function PmsSchedulePage() {
             <DialogTitle>Complete PMS Task: {selectedEntryForCompletion?.task_name}</DialogTitle>
             <DialogDescription>
               For MHE: {selectedEntryForCompletion?.mhe_unit_code} ({selectedEntryForCompletion?.mhe_unit_name}) <br/>
-              Due: {selectedEntryForCompletion ? format(parseISO(selectedEntryForCompletion.due_date), 'PP') : ''}
+              Due: {selectedEntryForCompletion?.due_date ? format(parseISO(selectedEntryForCompletion.due_date), 'PP') : 'N/A'}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 py-4">
