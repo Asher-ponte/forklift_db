@@ -6,16 +6,17 @@ import { usePathname } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useAuth } from '@/context/AuthContext';
-import { Truck, LayoutDashboard, ScanLine, FileText, Clock, Wrench, LogOut, Menu, UserCircle, Database } from 'lucide-react';
+import { Truck, LayoutDashboard, ScanLine, FileText, Clock, Wrench, LogOut, Menu, UserCircle, Database, CalendarCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 
 const allNavItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['supervisor'] }, // Dashboard only for supervisor
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['supervisor'] },
   { href: '/inspection', label: 'Inspection', icon: ScanLine, roles: ['operator', 'supervisor'] },
   { href: '/report', label: 'Forklift Report', icon: FileText, roles: ['operator', 'supervisor'] },
   { href: '/downtime', label: 'Downtime Log', icon: Clock, roles: ['operator', 'supervisor'] },
   { href: '/data-management', label: 'Data Management', icon: Database, roles: ['supervisor'] },
+  { href: '/pms-schedule', label: 'PMS Schedule', icon: CalendarCheck, roles: ['operator', 'supervisor'] },
   { href: '/tools', label: 'Tools', icon: Wrench, roles: ['operator', 'supervisor'] },
 ];
 
@@ -96,7 +97,7 @@ export default function Navbar() {
           <div className="h-8 w-8 bg-muted rounded-md animate-pulse md:hidden"></div>
           <div className="hidden md:flex items-center space-x-2">
             {/* Simplified skeleton for nav items */}
-            {[...Array(5)].map((_, i) => <div key={i} className="h-8 w-24 bg-muted rounded-md animate-pulse"></div>)}
+            {[...Array(6)].map((_, i) => <div key={i} className="h-8 w-24 bg-muted rounded-md animate-pulse"></div>)} {/* Increased skeleton count */}
             <div className="h-8 w-8 bg-muted rounded-full animate-pulse"></div>
           </div>
         </div>
@@ -156,3 +157,4 @@ export default function Navbar() {
     </header>
   );
 }
+
