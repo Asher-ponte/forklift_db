@@ -312,13 +312,13 @@ export default function ReportPage() {
       <Card className="shadow-md">
         <CardContent className="p-0">
            <div className="hidden md:flex items-center px-4 py-3 border-b bg-muted/50 text-sm font-medium text-muted-foreground">
-              <div className="w-[15%] pl-1">Unit ID</div>
-              <div className="w-[20%]">Date</div>
-              <div className="w-[15%]">Operator</div>
-              <div className="w-[10%]">Status</div>
-              <div className="w-[10%] text-center">Photo</div>
-              <div className="w-[25%] text-right pr-2">Actions</div>
-              <div className="w-[5%]"></div> {/* Spacer for chevron */}
+              <div className="w-[20%] pl-1">Unit ID</div>
+              <div className="w-[25%]">Date</div>
+              <div className="w-[20%]">Operator</div>
+              <div className="w-[15%]">Status</div>
+              <div className="w-[20%] text-center">Photo</div> {/* Adjusted widths slightly */}
+              {/* Actions column header removed as buttons are moved */}
+              <div className="w-[0%]"></div> {/* Spacer for chevron, adjust if needed */}
             </div>
           {isLoading ? (
             <div className="text-center p-10 text-muted-foreground">Loading reports...</div>
@@ -328,16 +328,16 @@ export default function ReportPage() {
               <AccordionItem value={report.id} key={report.id} className="border-b last:border-b-0">
                  <AccordionTrigger className="hover:bg-muted/50 w-full p-0 data-[state=open]:bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background">
                   <div className="flex flex-col md:flex-row flex-1 items-start md:items-center space-y-1 md:space-y-0 md:space-x-4 px-4 py-3 w-full text-left">
-                    <div className="font-medium w-full md:w-[15%] truncate">
+                    <div className="font-medium w-full md:w-[20%] truncate">
                       <span className="md:hidden font-semibold text-xs text-muted-foreground">Unit: </span>{report.unitId}
                     </div>
-                    <div className="text-sm text-muted-foreground w-full md:w-[20%] truncate">
+                    <div className="text-sm text-muted-foreground w-full md:w-[25%] truncate">
                       <span className="md:hidden font-semibold text-xs text-muted-foreground">Date: </span>{report.date}
                     </div>
-                    <div className="text-sm text-muted-foreground w-full md:w-[15%] truncate">
+                    <div className="text-sm text-muted-foreground w-full md:w-[20%] truncate">
                       <span className="md:hidden font-semibold text-xs text-muted-foreground">Operator: </span>{report.operator}
                     </div>
-                    <div className="w-full md:w-[10%]">
+                    <div className="w-full md:w-[15%]">
                        <span className="md:hidden font-semibold text-xs text-muted-foreground">Status: </span>
                       <Badge
                         variant={report.status === 'Safe' ? 'default' : 'destructive'}
@@ -349,7 +349,7 @@ export default function ReportPage() {
                         {report.status}
                       </Badge>
                     </div>
-                    <div className="w-full md:w-[10%] flex items-center md:justify-center">
+                    <div className="w-full md:w-[20%] flex items-center md:justify-center">
                        <span className="md:hidden font-semibold text-xs text-muted-foreground mr-2">Rep. Photo: </span>
                        {isClickablePhoto(report.representativePhotoUrl) ? (
                           <a href={report.representativePhotoUrl} target="_blank" rel="noopener noreferrer" className="relative group" onClick={(e) => e.stopPropagation()}>
@@ -376,19 +376,19 @@ export default function ReportPage() {
                           />
                         )}
                     </div>
-                    <div className="w-full md:w-[25%] flex md:justify-end items-center space-x-2 mt-2 md:mt-0">
-                         <span className="md:hidden font-semibold text-xs text-muted-foreground">Actions: </span>
-                        <Button variant="outline" size="sm" className="text-xs" disabled> {/* onClick={(e) => {e.stopPropagation(); console.log("Edit clicked for " + report.id)}} */}
-                            <Edit className="mr-1 h-3 w-3" /> Edit
-                        </Button>
-                        <Button variant="destructive" size="sm" className="text-xs" onClick={(e) => {e.stopPropagation(); handleOpenDeleteDialog(report.id);}}>
-                            <Trash2 className="mr-1 h-3 w-3" /> Delete
-                        </Button>
-                    </div>
+                    {/* Action buttons are removed from here */}
                   </div>
                 </AccordionTrigger>
                 <AccordionContent>
                   <div className="p-4 bg-secondary/30 border-t">
+                    <div className="flex justify-end space-x-2 mb-4">
+                        <Button variant="outline" size="sm" className="text-xs" disabled> {/* onClick={(e) => console.log("Edit clicked for " + report.id)}} */}
+                            <Edit className="mr-1 h-3 w-3" /> Edit
+                        </Button>
+                        <Button variant="destructive" size="sm" className="text-xs" onClick={() => handleOpenDeleteDialog(report.id)}>
+                            <Trash2 className="mr-1 h-3 w-3" /> Delete
+                        </Button>
+                    </div>
                     <h4 className="text-lg font-semibold mb-3">Inspection Items for Unit {report.unitId}:</h4>
                     {report.items && report.items.length > 0 ? (
                       <div className="overflow-x-auto">
