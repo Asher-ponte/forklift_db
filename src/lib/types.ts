@@ -29,6 +29,7 @@ export interface DowntimeLogEntry {
   endTime?: string | null; // ISO string, optional
   loggedAt: string; // ISO string, when the log was created by the user
   unsafeItems?: DowntimeUnsafeItem[]; // Array of unsafe items from inspection
+  sourceReportId?: string; // ID of the inspection report that generated this log (if any)
 }
 
 // This type will be used for what's stored in localStorage for downtime logs

@@ -129,7 +129,7 @@ export default function InspectionPage() {
     } finally {
       setIsLoadingInitialData(false);
     }
-  }, []);
+  }, [toast]);
 
   const filteredMHEs = useMemo(() => {
     if (!selectedDepartmentId) return [];
@@ -149,7 +149,7 @@ export default function InspectionPage() {
         setMasterChecklist([]);
         toast({
           title: "No Checklist Items",
-          description: "No active inspection items found for the MHE type or globally. Please configure them in Data Management. Inspection cannot proceed.",
+          description: "No active inspection items found. Please configure them in Data Management. Inspection cannot proceed.",
           variant: "destructive",
           duration: 7000
         });
@@ -289,6 +289,7 @@ export default function InspectionPage() {
 
     const overallStatus = hasUnsafeItems ? 'Unsafe' : 'Safe';
     const reportDate = new Date().toISOString();
+    const reportId = uuidv4();
 
     const reportItemsForStorage = inspectionItems.map(item => ({
       checklistItemId: item.checklistItemId,
@@ -301,7 +302,7 @@ export default function InspectionPage() {
     }));
 
     const newReport: StoredInspectionReport = {
-      id: uuidv4(),
+      id: reportId,
       unitId: selectedMheDetails?.unit_code || selectedMheId, // Prefer unit_code for report
       date: reportDate,
       operator: user.username,
@@ -341,6 +342,7 @@ export default function InspectionPage() {
           endTime: null,
           loggedAt: reportDate,
           unsafeItems: unsafeItemsForDowntimeLog.length > 0 ? unsafeItemsForDowntimeLog : undefined,
+          sourceReportId: newReport.id, // Link to the source inspection report
         };
         
         const allDowntimeLogs = getFromLocalStorage<StoredDowntimeLog[]>(DOWNTIME_STORAGE_KEY, []);

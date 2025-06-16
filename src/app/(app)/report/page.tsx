@@ -10,8 +10,8 @@ import { FileText, Download, Filter, RefreshCw, CheckCircle, AlertCircle, ImageO
 import Image from 'next/image';
 import Link from 'next/link';
 import { useState, useMemo, useEffect, useCallback } from "react";
-import type { StoredInspectionReport } from '@/lib/types';
-import type { InspectionRecordClientState } from '@/lib/mock-data'; // Ensure this path is correct
+import type { StoredInspectionReport, StoredDowntimeLog } from '@/lib/types';
+import type { InspectionRecordClientState } from '@/lib/mock-data';
 import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
 import {
   Accordion,
@@ -45,6 +45,8 @@ interface ReportDisplayEntry {
 }
 
 const REPORTS_STORAGE_KEY = 'forkliftInspectionReports';
+const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs';
+
 
 const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
   if (typeof window === 'undefined') return defaultValue;
@@ -219,15 +221,25 @@ export default function ReportPage() {
     if (!reportToDeleteId) return;
 
     try {
+      // Delete the inspection report
       const currentReports = getFromLocalStorage<StoredInspectionReport[]>(REPORTS_STORAGE_KEY, []);
       const updatedReports = currentReports.filter(report => report.id !== reportToDeleteId);
       saveToLocalStorage(REPORTS_STORAGE_KEY, updatedReports);
-      
       toast({ title: "Report Deleted", description: `Report ID ${reportToDeleteId.substring(0,8)}... removed from local storage.` });
-      loadReports(); // Refresh the list
+
+      // Check for and delete associated downtime log
+      const currentDowntimeLogs = getFromLocalStorage<StoredDowntimeLog[]>(DOWNTIME_STORAGE_KEY, []);
+      const updatedDowntimeLogs = currentDowntimeLogs.filter(log => log.sourceReportId !== reportToDeleteId);
+
+      if (currentDowntimeLogs.length !== updatedDowntimeLogs.length) {
+        saveToLocalStorage(DOWNTIME_STORAGE_KEY, updatedDowntimeLogs);
+        toast({ title: "Associated Downtime Log Deleted", description: `Downtime log linked to report ${reportToDeleteId.substring(0,8)}... also removed.`, duration: 4000 });
+      }
+      
+      loadReports(); // Refresh the list on the current page
     } catch (error) {
-      console.error("Error deleting report from localStorage:", error);
-      toast({ title: "Deletion Error", description: (error instanceof Error) ? error.message : "Could not delete report from local storage.", variant: "destructive" });
+      console.error("Error deleting report or associated downtime log from localStorage:", error);
+      toast({ title: "Deletion Error", description: (error instanceof Error) ? error.message : "Could not delete data from local storage.", variant: "destructive" });
     } finally {
       setIsDeleteConfirmOpen(false);
       setReportToDeleteId(null);
@@ -481,7 +493,7 @@ export default function ReportPage() {
             <AlertDialogTitle>Are you sure you want to delete this report?</AlertDialogTitle>
             <AlertDialogDescription>
               This action cannot be undone. This will permanently delete the inspection report
-              (ID: {reportToDeleteId ? `${reportToDeleteId.substring(0,8)}...` : ''}) from local storage.
+              (ID: {reportToDeleteId ? `${reportToDeleteId.substring(0,8)}...` : ''}) and any associated downtime log from local storage.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
