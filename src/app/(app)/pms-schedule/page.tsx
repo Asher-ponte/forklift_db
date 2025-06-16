@@ -11,12 +11,16 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { CalendarCheck, CheckSquare, Filter, ListFilter, Loader2, PlusCircle, RefreshCw, Settings2 } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { CalendarCheck, CheckSquare, Filter, ListFilter, Loader2, PlusCircle, RefreshCw, Settings2, AlertTriangle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import type { MheUnit, StoredPmsTaskMaster, StoredPmsScheduleEntry, PmsScheduleDisplayEntry } from '@/lib/types';
 import { v4 as uuidv4 } from 'uuid';
-import { format, parseISO, addDays, addWeeks, addMonths, isPast } from 'date-fns';
+import { format, parseISO, addDays, addWeeks, addMonths, isValid } from 'date-fns';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 
 // --- LocalStorage Keys ---
 const MHE_UNITS_KEY = 'forkliftMheUnits';
@@ -51,6 +55,26 @@ const MOCK_PMS_TASK_MASTERS: StoredPmsTaskMaster[] = [
 const ALL_MHES_SELECT_VALUE = "__ALL_MHES__";
 const ALL_STATUS_SELECT_VALUE = "__ALL_STATUS__";
 
+// --- Zod Schemas for Forms ---
+const pmsTaskMasterSchema = z.object({
+  name: z.string().min(1, "Task name is required"),
+  description: z.string().optional().nullable(),
+  frequency_unit: z.enum(['days', 'weeks', 'months', 'operating_hours']),
+  frequency_value: z.coerce.number().min(1, "Frequency value must be at least 1"),
+  category: z.string().optional().nullable(),
+  estimated_duration_minutes: z.coerce.number().optional().nullable(),
+  is_active: z.boolean().default(true),
+});
+type PmsTaskMasterFormData = z.infer<typeof pmsTaskMasterSchema>;
+
+const pmsScheduleEntrySchema = z.object({
+  mhe_unit_id: z.string().min(1, "MHE Unit is required"),
+  pms_task_master_id: z.string().min(1, "PMS Task is required"),
+  due_date: z.string().refine((val) => isValid(parseISO(val)), { message: "Valid due date is required" }),
+});
+type PmsScheduleEntryFormData = z.infer<typeof pmsScheduleEntrySchema>;
+
+
 export default function PmsSchedulePage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -60,7 +84,12 @@ export default function PmsSchedulePage() {
   const [scheduleEntries, setScheduleEntries] = useState<StoredPmsScheduleEntry[]>([]);
   
   const [isLoading, setIsLoading] = useState(true);
+  const [isDataLoading, setIsDataLoading] = useState({ mhe: true, tasks: true, schedules: true });
+  
   const [isCompleteModalOpen, setIsCompleteModalOpen] = useState(false);
+  const [isAddMasterTaskModalOpen, setIsAddMasterTaskModalOpen] = useState(false);
+  const [isAddScheduleModalOpen, setIsAddScheduleModalOpen] = useState(false);
+
   const [selectedEntryForCompletion, setSelectedEntryForCompletion] = useState<PmsScheduleDisplayEntry | null>(null);
   const [completionNotes, setCompletionNotes] = useState('');
   const [completionDate, setCompletionDate] = useState('');
@@ -70,6 +99,14 @@ export default function PmsSchedulePage() {
   const [filterDueDateStart, setFilterDueDateStart] = useState<string>('');
   const [filterDueDateEnd, setFilterDueDateEnd] = useState<string>('');
 
+  const { register: registerMasterTask, handleSubmit: handleSubmitMasterTask, reset: resetMasterTaskForm, formState: { errors: masterTaskErrors } } = useForm<PmsTaskMasterFormData>({
+    resolver: zodResolver(pmsTaskMasterSchema), defaultValues: { is_active: true, frequency_unit: 'days' }
+  });
+  const { control: controlScheduleEntry, handleSubmit: handleSubmitScheduleEntry, reset: resetScheduleEntryForm, formState: { errors: scheduleEntryErrors } } = useForm<PmsScheduleEntryFormData>({
+    resolver: zodResolver(pmsScheduleEntrySchema),
+  });
+
+
   const initializeMockData = useCallback(() => {
     const storedTasks = getFromLocalStorage<StoredPmsTaskMaster[]>(PMS_TASK_MASTER_KEY, []);
     if (storedTasks.length === 0) {
@@ -77,19 +114,35 @@ export default function PmsSchedulePage() {
     }
   }, []);
 
-
-  const loadPmsData = useCallback(async () => {
-    setIsLoading(true);
-    initializeMockData(); 
-
+  const fetchMheUnitsCallback = useCallback(async () => {
+    setIsDataLoading(prev => ({ ...prev, mhe: true }));
     try {
       const fetchedMheUnits = getFromLocalStorage<MheUnit[]>(MHE_UNITS_KEY, []);
-      const fetchedTaskMasters = getFromLocalStorage<StoredPmsTaskMaster[]>(PMS_TASK_MASTER_KEY, []);
-      const fetchedScheduleEntries = getFromLocalStorage<StoredPmsScheduleEntry[]>(PMS_SCHEDULE_ENTRIES_KEY, []);
-      
       setMheUnits(fetchedMheUnits);
+    } catch (error) {
+      toast({ title: "Error Loading MHE Units", variant: "destructive" });
+    } finally {
+      setIsDataLoading(prev => ({ ...prev, mhe: false }));
+    }
+  }, [toast]);
+  
+  const fetchTaskMastersCallback = useCallback(async () => {
+    setIsDataLoading(prev => ({ ...prev, tasks: true }));
+    initializeMockData(); 
+    try {
+      const fetchedTaskMasters = getFromLocalStorage<StoredPmsTaskMaster[]>(PMS_TASK_MASTER_KEY, []);
       setTaskMasters(fetchedTaskMasters);
-      
+    } catch (error) {
+      toast({ title: "Error Loading Task Masters", variant: "destructive" });
+    } finally {
+      setIsDataLoading(prev => ({ ...prev, tasks: false }));
+    }
+  }, [toast, initializeMockData]);
+
+  const fetchScheduleEntriesCallback = useCallback(async () => {
+    setIsDataLoading(prev => ({ ...prev, schedules: true }));
+    try {
+      const fetchedScheduleEntries = getFromLocalStorage<StoredPmsScheduleEntry[]>(PMS_SCHEDULE_ENTRIES_KEY, []);
       const today = new Date();
       today.setHours(0,0,0,0); 
       const updatedEntries = fetchedScheduleEntries.map(entry => {
@@ -99,19 +152,29 @@ export default function PmsSchedulePage() {
         return entry;
       });
       setScheduleEntries(updatedEntries);
-      saveToLocalStorage(PMS_SCHEDULE_ENTRIES_KEY, updatedEntries);
-
-      toast({ title: "PMS Data Loaded", description: "Fetched MHEs, Task Masters, and Schedule Entries.", duration: 2000});
+      saveToLocalStorage(PMS_SCHEDULE_ENTRIES_KEY, updatedEntries); // Save updated statuses
     } catch (error) {
-      toast({ title: "Error Loading PMS Data", description: "Could not load data from local storage.", variant: "destructive" });
+      toast({ title: "Error Loading Schedule Entries", variant: "destructive" });
     } finally {
-      setIsLoading(false);
+      setIsDataLoading(prev => ({ ...prev, schedules: false }));
     }
-  }, [toast, initializeMockData]);
+  }, [toast]);
+
 
   useEffect(() => {
-    loadPmsData();
-  }, [loadPmsData]);
+    const loadAllData = async () => {
+        setIsLoading(true);
+        await Promise.all([
+            fetchMheUnitsCallback(),
+            fetchTaskMastersCallback(),
+            fetchScheduleEntriesCallback()
+        ]);
+        toast({ title: "PMS Data Loaded", description: "Fetched MHEs, Task Masters, and Schedule Entries.", duration: 2000});
+        setIsLoading(false);
+    };
+    loadAllData();
+  }, [fetchMheUnitsCallback, fetchTaskMastersCallback, fetchScheduleEntriesCallback, toast]);
+
 
   const displayedScheduleEntries = useMemo(() => {
     return scheduleEntries
@@ -143,9 +206,18 @@ export default function PmsSchedulePage() {
         const statusMatch = filterStatus ? entry.status === filterStatus : true;
         let dateMatch = true;
         if (filterDueDateStart || filterDueDateEnd) {
-            const dueDate = parseISO(entry.due_date);
-            if(filterDueDateStart && dueDate < parseISO(filterDueDateStart)) dateMatch = false;
-            if(filterDueDateEnd && dueDate > parseISO(filterDueDateEnd)) dateMatch = false;
+            try {
+              const dueDate = parseISO(entry.due_date);
+              if (filterDueDateStart && dueDate < parseISO(filterDueDateStart)) dateMatch = false;
+              // Adjust end date to be inclusive of the whole day
+              if (filterDueDateEnd) {
+                  const endDate = parseISO(filterDueDateEnd);
+                  endDate.setHours(23, 59, 59, 999);
+                  if (dueDate > endDate) dateMatch = false;
+              }
+            } catch (e) {
+              dateMatch = false; // Invalid date in entry or filter
+            }
         }
         return mheMatch && statusMatch && dateMatch;
       })
@@ -160,14 +232,30 @@ export default function PmsSchedulePage() {
   };
 
   const handleMarkAsComplete = () => {
-    if (!selectedEntryForCompletion || !user) return;
+    if (!selectedEntryForCompletion || !user || !completionDate) {
+      toast({title: "Error", description: "Completion date is required.", variant: "destructive"});
+      return;
+    }
+
+    let parsedCompletionDate;
+    try {
+      parsedCompletionDate = parseISO(completionDate);
+      if(!isValid(parsedCompletionDate)){
+        toast({title: "Error", description: "Invalid completion date format.", variant: "destructive"});
+        return;
+      }
+    } catch (e){
+      toast({title: "Error", description: "Invalid completion date format.", variant: "destructive"});
+      return;
+    }
+
 
     const updatedEntries = scheduleEntries.map(entry =>
       entry.id === selectedEntryForCompletion.id
         ? {
             ...entry,
             status: 'Completed' as 'Completed',
-            completion_date: parseISO(completionDate).toISOString(),
+            completion_date: parsedCompletionDate.toISOString(),
             notes: completionNotes,
             serviced_by_user_id: user.id,
             serviced_by_username: user.username,
@@ -179,9 +267,9 @@ export default function PmsSchedulePage() {
     toast({ title: "Task Completed", description: `${selectedEntryForCompletion.task_name} for ${selectedEntryForCompletion.mhe_unit_code} marked as complete.` });
     
     const completedTaskMaster = taskMasters.find(tm => tm.id === selectedEntryForCompletion.pms_task_master_id);
-    if (completedTaskMaster && completedTaskMaster.frequency_unit !== 'operating_hours') {
+    if (completedTaskMaster && completedTaskMaster.frequency_unit !== 'operating_hours' && completedTaskMaster.is_active) {
       let nextDueDate: Date;
-      const currentCompletionDate = parseISO(completionDate);
+      const currentCompletionDate = parsedCompletionDate;
       switch(completedTaskMaster.frequency_unit) {
         case 'days': nextDueDate = addDays(currentCompletionDate, completedTaskMaster.frequency_value); break;
         case 'weeks': nextDueDate = addWeeks(currentCompletionDate, completedTaskMaster.frequency_value); break;
@@ -198,13 +286,54 @@ export default function PmsSchedulePage() {
       const allEntries = getFromLocalStorage<StoredPmsScheduleEntry[]>(PMS_SCHEDULE_ENTRIES_KEY, []);
       allEntries.push(newScheduleEntry);
       saveToLocalStorage(PMS_SCHEDULE_ENTRIES_KEY, allEntries);
-      loadPmsData(); 
-      toast({title: "Next Task Scheduled", description: `Next ${completedTaskMaster.name} scheduled for ${format(nextDueDate, 'P')}.`});
+      fetchScheduleEntriesCallback(); 
+      toast({title: "Next Task Scheduled", description: `Next ${completedTaskMaster.name} for ${selectedEntryForCompletion.mhe_unit_code} scheduled for ${format(nextDueDate, 'P')}.`});
     }
 
     setIsCompleteModalOpen(false);
     setSelectedEntryForCompletion(null);
     setCompletionNotes('');
+  };
+
+  const onAddMasterTask = async (data: PmsTaskMasterFormData) => {
+    try {
+      const currentMasterTasks = getFromLocalStorage<StoredPmsTaskMaster[]>(PMS_TASK_MASTER_KEY, []);
+      if (currentMasterTasks.some(task => task.name.toLowerCase() === data.name.toLowerCase())) {
+        toast({ title: "Error Adding Task", description: "A master task with this name already exists.", variant: "destructive" });
+        return;
+      }
+      const newTaskMaster: StoredPmsTaskMaster = { id: uuidv4(), ...data };
+      currentMasterTasks.push(newTaskMaster);
+      saveToLocalStorage(PMS_TASK_MASTER_KEY, currentMasterTasks);
+      
+      toast({ title: "Success", description: "Master PMS Task added locally." });
+      fetchTaskMastersCallback(); 
+      resetMasterTaskForm({is_active: true, frequency_unit: 'days'});
+      setIsAddMasterTaskModalOpen(false);
+    } catch (error) {
+      toast({ title: "Error Adding Master Task", description: (error instanceof Error) ? error.message : "Could not add master task.", variant: "destructive" });
+    }
+  };
+  
+  const onAddScheduleEntry = async (data: PmsScheduleEntryFormData) => {
+    try {
+      const newSchedule: StoredPmsScheduleEntry = { 
+        id: uuidv4(), 
+        ...data, 
+        status: 'Pending',
+        due_date: format(parseISO(data.due_date), 'yyyy-MM-dd') // Ensure correct date format
+      };
+      const currentScheduleEntries = getFromLocalStorage<StoredPmsScheduleEntry[]>(PMS_SCHEDULE_ENTRIES_KEY, []);
+      currentScheduleEntries.push(newSchedule);
+      saveToLocalStorage(PMS_SCHEDULE_ENTRIES_KEY, currentScheduleEntries);
+      
+      toast({ title: "Success", description: "New PMS schedule entry added locally." });
+      fetchScheduleEntriesCallback(); 
+      resetScheduleEntryForm();
+      setIsAddScheduleModalOpen(false);
+    } catch (error) {
+      toast({ title: "Error Adding Schedule", description: (error instanceof Error) ? error.message : "Could not add schedule entry.", variant: "destructive" });
+    }
   };
   
   const getStatusBadgeVariant = (status: PmsScheduleDisplayEntry['status']): "default" | "secondary" | "destructive" | "outline" => {
@@ -229,6 +358,15 @@ export default function PmsSchedulePage() {
     }
   }
 
+  if (isLoading && (isDataLoading.mhe || isDataLoading.tasks || isDataLoading.schedules)) {
+    return (
+      <div className="flex h-[calc(100vh-200px)] items-center justify-center">
+        <Loader2 className="h-12 w-12 animate-spin text-primary" />
+        <p className="ml-3 text-muted-foreground">Loading PMS data...</p>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <Card className="shadow-lg">
@@ -238,7 +376,7 @@ export default function PmsSchedulePage() {
             Preventive Maintenance Schedule
           </CardTitle>
           <CardDescription>
-            View and manage upcoming and overdue maintenance tasks for MHE Units. Data is from local storage.
+            View, manage, and schedule maintenance tasks for MHE Units. Data is from local storage.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -246,7 +384,11 @@ export default function PmsSchedulePage() {
       <Card>
         <CardHeader className="flex flex-row justify-between items-center">
             <CardTitle className="text-xl flex items-center"><ListFilter className="mr-2 h-5 w-5 text-primary"/>Filters</CardTitle>
-             <Button onClick={loadPmsData} variant="outline" size="sm" disabled={isLoading}>
+             <Button onClick={() => {
+                fetchMheUnitsCallback();
+                fetchTaskMastersCallback();
+                fetchScheduleEntriesCallback();
+             }} variant="outline" size="sm" disabled={isLoading}>
                 <RefreshCw className="mr-2 h-4 w-4" /> {isLoading ? "Refreshing..." : "Refresh Data"}
               </Button>
         </CardHeader>
@@ -256,8 +398,9 @@ export default function PmsSchedulePage() {
                 <Select 
                   value={filterMheId} 
                   onValueChange={(selectedValue) => setFilterMheId(selectedValue === ALL_MHES_SELECT_VALUE ? '' : selectedValue)}
+                  disabled={mheUnits.length === 0}
                 >
-                    <SelectTrigger id="filterMhe"><SelectValue placeholder="All MHEs" /></SelectTrigger>
+                    <SelectTrigger id="filterMhe"><SelectValue placeholder={mheUnits.length === 0 ? "No MHEs available" : "All MHEs"} /></SelectTrigger>
                     <SelectContent>
                         <SelectItem value={ALL_MHES_SELECT_VALUE}>All MHEs</SelectItem>
                         {mheUnits.map(mhe => <SelectItem key={mhe.id} value={mhe.id}>{mhe.unit_code} - {mhe.name}</SelectItem>)}
@@ -291,11 +434,80 @@ export default function PmsSchedulePage() {
       <Card>
         <CardHeader className="flex flex-row justify-between items-center">
           <CardTitle className="text-xl">Scheduled Tasks</CardTitle>
-          <Button variant="outline" disabled><PlusCircle className="mr-2 h-4 w-4"/> Add New Schedule (Future)</Button>
+          <Dialog open={isAddScheduleModalOpen} onOpenChange={setIsAddScheduleModalOpen}>
+            <DialogTrigger asChild>
+              <Button variant="outline" onClick={() => { resetScheduleEntryForm(); setIsAddScheduleModalOpen(true); }} disabled={mheUnits.length === 0 || taskMasters.filter(tm => tm.is_active).length === 0}>
+                  <PlusCircle className="mr-2 h-4 w-4"/> Add New Schedule
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[480px]">
+              <DialogHeader>
+                <DialogTitle>Add New PMS Schedule Entry</DialogTitle>
+                <DialogDescription>Select MHE, Task and Due Date.</DialogDescription>
+              </DialogHeader>
+              <form onSubmit={handleSubmitScheduleEntry(onAddScheduleEntry)} className="space-y-4 py-4">
+                <div>
+                  <Label htmlFor="schedMheUnit">MHE Unit</Label>
+                  <Controller
+                    name="mhe_unit_id"
+                    control={controlScheduleEntry}
+                    render={({ field }) => (
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <SelectTrigger id="schedMheUnit" className="mt-1">
+                          <SelectValue placeholder="Select MHE Unit" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {mheUnits.map(mhe => <SelectItem key={mhe.id} value={mhe.id}>{mhe.unit_code} - {mhe.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {scheduleEntryErrors.mhe_unit_id && <p className="text-sm text-destructive mt-1">{scheduleEntryErrors.mhe_unit_id.message}</p>}
+                </div>
+                <div>
+                  <Label htmlFor="schedPmsTask">PMS Task</Label>
+                   <Controller
+                    name="pms_task_master_id"
+                    control={controlScheduleEntry}
+                    render={({ field }) => (
+                      <Select onValueChange={field.onChange} value={field.value}>
+                        <SelectTrigger id="schedPmsTask" className="mt-1">
+                          <SelectValue placeholder="Select PMS Task" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {taskMasters.filter(tm => tm.is_active).map(task => <SelectItem key={task.id} value={task.id}>{task.name}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    )}
+                  />
+                  {scheduleEntryErrors.pms_task_master_id && <p className="text-sm text-destructive mt-1">{scheduleEntryErrors.pms_task_master_id.message}</p>}
+                </div>
+                <div>
+                  <Label htmlFor="schedDueDate">Due Date</Label>
+                  <Controller
+                    name="due_date"
+                    control={controlScheduleEntry}
+                    render={({ field }) => (
+                      <Input type="date" id="schedDueDate" {...field} className="mt-1" />
+                    )}
+                  />
+                  {scheduleEntryErrors.due_date && <p className="text-sm text-destructive mt-1">{scheduleEntryErrors.due_date.message}</p>}
+                </div>
+                <DialogFooter>
+                  <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
+                  <Button type="submit">Save Schedule</Button>
+                </DialogFooter>
+              </form>
+            </DialogContent>
+          </Dialog>
         </CardHeader>
         <CardContent>
-          {isLoading ? (
+          {isDataLoading.schedules || isDataLoading.mhe || isDataLoading.tasks ? (
             <div className="flex justify-center items-center py-10"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
+          ) : mheUnits.length === 0 ? (
+            <p className="text-muted-foreground text-center py-6">No MHE units defined. Please add MHE units in Data Management first.</p>
+          ) : taskMasters.filter(tm => tm.is_active).length === 0 ? (
+            <p className="text-muted-foreground text-center py-6">No active Master PMS tasks defined. Please add master tasks below.</p>
           ) : displayedScheduleEntries.length === 0 ? (
             <p className="text-muted-foreground text-center py-6">No PMS entries found matching criteria, or no MHE units/tasks configured.</p>
           ) : (
@@ -345,12 +557,117 @@ export default function PmsSchedulePage() {
       </Card>
       
       <Card>
-        <CardHeader>
-            <CardTitle className="text-xl flex items-center"><Settings2 className="mr-2 h-5 w-5 text-primary"/>Manage Master PMS Tasks</CardTitle>
-            <CardDescription>Define standard preventive maintenance tasks and their frequencies. (Future Implementation)</CardDescription>
+        <CardHeader  className="flex flex-row justify-between items-center">
+            <div className="space-y-1.5">
+                <CardTitle className="text-xl flex items-center"><Settings2 className="mr-2 h-5 w-5 text-primary"/>Manage Master PMS Tasks</CardTitle>
+                <CardDescription>Define standard preventive maintenance tasks and their frequencies.</CardDescription>
+            </div>
+             <Dialog open={isAddMasterTaskModalOpen} onOpenChange={setIsAddMasterTaskModalOpen}>
+                <DialogTrigger asChild>
+                    <Button variant="outline" onClick={() => { resetMasterTaskForm({is_active: true, frequency_unit: 'days'}); setIsAddMasterTaskModalOpen(true);}}>
+                        <PlusCircle className="mr-2 h-4 w-4"/> Add Master Task
+                    </Button>
+                </DialogTrigger>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle>Add New Master PMS Task</DialogTitle>
+                        <DialogDescription>Fill in details for a reusable maintenance task.</DialogDescription>
+                    </DialogHeader>
+                    <form onSubmit={handleSubmitMasterTask(onAddMasterTask)} className="space-y-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
+                        <div>
+                            <Label htmlFor="masterTaskName">Task Name</Label>
+                            <Input id="masterTaskName" {...registerMasterTask("name")} className="mt-1"/>
+                            {masterTaskErrors.name && <p className="text-sm text-destructive mt-1">{masterTaskErrors.name.message}</p>}
+                        </div>
+                        <div>
+                            <Label htmlFor="masterTaskDesc">Description (Optional)</Label>
+                            <Textarea id="masterTaskDesc" {...registerMasterTask("description")} className="mt-1"/>
+                        </div>
+                        <div className="grid grid-cols-2 gap-4">
+                            <div>
+                                <Label htmlFor="masterTaskFreqUnit">Frequency Unit</Label>
+                                 <Controller
+                                    name="frequency_unit"
+                                    control={registerMasterTask.control}
+                                    render={({ field }) => (
+                                        <Select onValueChange={field.onChange} value={field.value} >
+                                            <SelectTrigger id="masterTaskFreqUnit" className="mt-1">
+                                                <SelectValue placeholder="Select unit" />
+                                            </SelectTrigger>
+                                            <SelectContent>
+                                                <SelectItem value="days">Days</SelectItem>
+                                                <SelectItem value="weeks">Weeks</SelectItem>
+                                                <SelectItem value="months">Months</SelectItem>
+                                                <SelectItem value="operating_hours">Operating Hours</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                    )}
+                                />
+                                {masterTaskErrors.frequency_unit && <p className="text-sm text-destructive mt-1">{masterTaskErrors.frequency_unit.message}</p>}
+                            </div>
+                            <div>
+                                <Label htmlFor="masterTaskFreqVal">Frequency Value</Label>
+                                <Input id="masterTaskFreqVal" type="number" {...registerMasterTask("frequency_value")} className="mt-1"/>
+                                {masterTaskErrors.frequency_value && <p className="text-sm text-destructive mt-1">{masterTaskErrors.frequency_value.message}</p>}
+                            </div>
+                        </div>
+                        <div>
+                            <Label htmlFor="masterTaskCategory">Category (Optional)</Label>
+                            <Input id="masterTaskCategory" {...registerMasterTask("category")} className="mt-1"/>
+                        </div>
+                        <div>
+                            <Label htmlFor="masterTaskDuration">Est. Duration (Minutes, Optional)</Label>
+                            <Input id="masterTaskDuration" type="number" {...registerMasterTask("estimated_duration_minutes")} className="mt-1"/>
+                        </div>
+                         <div className="flex items-center space-x-2 pt-2">
+                            <Controller
+                                name="is_active"
+                                control={registerMasterTask.control}
+                                render={({ field }) => (
+                                    <Switch id="masterTaskIsActive" checked={field.value} onCheckedChange={field.onChange} />
+                                )}
+                            />
+                            <Label htmlFor="masterTaskIsActive" className="text-sm">Task is Active</Label>
+                        </div>
+                        <DialogFooter className="pt-4">
+                            <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
+                            <Button type="submit">Save Master Task</Button>
+                        </DialogFooter>
+                    </form>
+                </DialogContent>
+            </Dialog>
         </CardHeader>
         <CardContent>
-            <p className="text-muted-foreground">This section will allow supervisors to add, edit, and manage the master list of PMS tasks that can be scheduled for MHE units.</p>
+            {isDataLoading.tasks ? (
+                <div className="flex justify-center items-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+            ) : taskMasters.length === 0 ? (
+                <p className="text-muted-foreground text-center py-6">No Master PMS Tasks defined yet. Click "Add Master Task" to create one.</p>
+            ) : (
+                <div className="overflow-x-auto">
+                    <Table>
+                        <TableHeader>
+                            <TableRow>
+                                <TableHead>Name</TableHead>
+                                <TableHead>Frequency</TableHead>
+                                <TableHead>Category</TableHead>
+                                <TableHead>Est. Duration</TableHead>
+                                <TableHead>Active</TableHead>
+                            </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                            {taskMasters.map(task => (
+                                <TableRow key={task.id}>
+                                    <TableCell>{task.name}</TableCell>
+                                    <TableCell>{task.frequency_value} {task.frequency_unit}</TableCell>
+                                    <TableCell>{task.category || 'N/A'}</TableCell>
+                                    <TableCell>{task.estimated_duration_minutes ? `${task.estimated_duration_minutes} min` : 'N/A'}</TableCell>
+                                    <TableCell>{task.is_active ? 'Yes' : 'No'}</TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </div>
+            )}
         </CardContent>
       </Card>
 
@@ -368,6 +685,7 @@ export default function PmsSchedulePage() {
             <div>
                 <Label htmlFor="completionDate">Completion Date</Label>
                 <Input type="date" id="completionDate" value={completionDate} onChange={e => setCompletionDate(e.target.value)} className="mt-1"/>
+                {!completionDate && <p className="text-sm text-destructive mt-1">Completion date is required.</p>}
             </div>
             <div>
               <Label htmlFor="completionNotes">Notes (Optional)</Label>
