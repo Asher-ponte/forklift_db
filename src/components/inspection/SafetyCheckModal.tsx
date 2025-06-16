@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription, DialogClose } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea'; // Import Textarea
+import { Textarea } from '@/components/ui/textarea'; 
 import { Camera, CheckCircle, XCircle, MessageSquare } from 'lucide-react';
 import type { ChecklistItem } from '@/lib/mock-data';
 import Image from 'next/image';
@@ -15,7 +15,7 @@ interface SafetyCheckModalProps {
   isOpen: boolean;
   onClose: () => void;
   item: ChecklistItem | null;
-  onSubmit: (itemId: string, isSafe: boolean, photoUrl: string, remarks: string | null) => void; // Added remarks
+  onSubmit: (itemId: string, isSafe: boolean, photoUrl: string, remarks: string | null) => void; 
 }
 
 export default function SafetyCheckModal({ isOpen, onClose, item, onSubmit }: SafetyCheckModalProps) {
@@ -50,7 +50,7 @@ export default function SafetyCheckModal({ isOpen, onClose, item, onSubmit }: Sa
     const photoDataUrl = photoPreview || `data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=`;
     const finalRemarks = currentDecision === 'unsafe' ? remarks : null;
 
-    await new Promise(resolve => setTimeout(resolve, 300)); // Simulate submission
+    await new Promise(resolve => setTimeout(resolve, 300)); 
     
     onSubmit(item.id, currentDecision === 'safe', photoDataUrl, finalRemarks);
     setIsSubmitting(false);
@@ -67,7 +67,7 @@ export default function SafetyCheckModal({ isOpen, onClose, item, onSubmit }: Sa
           <DialogDescription>{item.description}</DialogDescription>
         </DialogHeader>
         
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 py-4 max-h-[60vh] overflow-y-auto pr-2"> {/* Added max-h, overflow-y-auto, and pr-2 for scrollbar */}
           <div>
             <Label htmlFor="photo-upload" className="mb-2 block font-medium">Capture Photo (Optional)</Label>
             <div className="flex items-center space-x-3">
@@ -128,7 +128,7 @@ export default function SafetyCheckModal({ isOpen, onClose, item, onSubmit }: Sa
           )}
         </div>
         
-        <DialogFooter className="sm:justify-center space-y-2 sm:space-y-0 sm:space-x-2">
+        <DialogFooter className="sm:justify-center space-y-2 sm:space-y-0 sm:space-x-2 pt-4 border-t"> {/* Added pt-4 and border-t to footer for separation */}
            <Button 
             type="button" 
             onClick={handleSubmitDecision} 
@@ -148,3 +148,4 @@ export default function SafetyCheckModal({ isOpen, onClose, item, onSubmit }: Sa
     </Dialog>
   );
 }
+

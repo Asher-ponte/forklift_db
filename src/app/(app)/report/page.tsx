@@ -6,12 +6,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileText, Download, Filter, RefreshCw, CheckCircle, AlertCircle, ImageOff, MessageSquare, ExternalLink } from "lucide-react";
+import { FileText, Download, Filter, RefreshCw, CheckCircle, AlertCircle, ImageOff, MessageSquare, ExternalLink, Trash2, Edit } from "lucide-react";
 import Image from 'next/image';
-import Link from 'next/link'; // Import NextLink for internal navigation if needed, use <a> for external
+import Link from 'next/link';
 import { useState, useMemo, useEffect, useCallback } from "react";
 import type { StoredInspectionReport } from '@/lib/types';
-import type { InspectionRecordClientState } from '@/lib/mock-data';
+import type { InspectionRecordClientState } from '@/lib/mock-data'; // Ensure this path is correct
 import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
 import {
   Accordion,
@@ -19,6 +19,16 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 
@@ -50,12 +60,23 @@ const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
   return defaultValue;
 };
 
+const saveToLocalStorage = <T>(key: string, value: T): void => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (e) {
+    console.error(`Error saving to localStorage item ${key}:`, e);
+  }
+};
+
 export default function ReportPage() {
   const [allReports, setAllReports] = useState<ReportDisplayEntry[]>([]);
   const [filterUnitId, setFilterUnitId] = useState('');
   const [filterDateRange, setFilterDateRange] = useState<{ from: string, to: string }>({ from: '', to: '' });
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [reportToDeleteId, setReportToDeleteId] = useState<string | null>(null);
 
   const processReportsToDisplayEntries = (reportsFromStorage: StoredInspectionReport[]): ReportDisplayEntry[] => {
     return reportsFromStorage.map(report => {
@@ -126,12 +147,12 @@ export default function ReportPage() {
 
         if (filterDateRange.from) {
           const fromDate = new Date(filterDateRange.from);
-          fromDate.setHours(0,0,0,0); // Normalize
+          fromDate.setHours(0,0,0,0); 
           if (reportDateOnly < fromDate) dateMatch = false;
         }
         if (filterDateRange.to && dateMatch) {
           const toDate = new Date(filterDateRange.to);
-          toDate.setHours(23,59,59,999); // Normalize to end of day
+          toDate.setHours(23,59,59,999); 
           if (reportDateOnly > toDate) dateMatch = false;
         }
       }
@@ -189,6 +210,30 @@ export default function ReportPage() {
 
   const isClickablePhoto = (url: string | null | undefined) => url && url !== PLACEHOLDER_IMAGE_DATA_URL && !url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP");
 
+  const handleOpenDeleteDialog = (id: string) => {
+    setReportToDeleteId(id);
+    setIsDeleteConfirmOpen(true);
+  };
+
+  const handleConfirmDelete = () => {
+    if (!reportToDeleteId) return;
+
+    try {
+      const currentReports = getFromLocalStorage<StoredInspectionReport[]>(REPORTS_STORAGE_KEY, []);
+      const updatedReports = currentReports.filter(report => report.id !== reportToDeleteId);
+      saveToLocalStorage(REPORTS_STORAGE_KEY, updatedReports);
+      
+      toast({ title: "Report Deleted", description: `Report ID ${reportToDeleteId.substring(0,8)}... removed from local storage.` });
+      loadReports(); // Refresh the list
+    } catch (error) {
+      console.error("Error deleting report from localStorage:", error);
+      toast({ title: "Deletion Error", description: (error instanceof Error) ? error.message : "Could not delete report from local storage.", variant: "destructive" });
+    } finally {
+      setIsDeleteConfirmOpen(false);
+      setReportToDeleteId(null);
+    }
+  };
+
 
   return (
     <div className="space-y-8">
@@ -198,7 +243,7 @@ export default function ReportPage() {
             <FileText className="mr-3 h-8 w-8 text-primary" />
             Forklift Inspection Report
           </CardTitle>
-          <CardDescription>View and filter forklift inspection history from local storage.</CardDescription>
+          <CardDescription>View, filter, and manage forklift inspection history from local storage.</CardDescription>
         </CardHeader>
       </Card>
 
@@ -255,11 +300,12 @@ export default function ReportPage() {
       <Card className="shadow-md">
         <CardContent className="p-0">
            <div className="hidden md:flex items-center px-4 py-3 border-b bg-muted/50 text-sm font-medium text-muted-foreground">
-              <div className="w-[20%] pl-1">Unit ID</div>
-              <div className="w-[25%]">Date</div>
-              <div className="w-[20%]">Operator</div>
-              <div className="w-[15%]">Status</div>
-              <div className="w-[15%] text-center">Photo</div>
+              <div className="w-[15%] pl-1">Unit ID</div>
+              <div className="w-[20%]">Date</div>
+              <div className="w-[15%]">Operator</div>
+              <div className="w-[10%]">Status</div>
+              <div className="w-[10%] text-center">Photo</div>
+              <div className="w-[25%] text-right pr-2">Actions</div>
               <div className="w-[5%]"></div> {/* Spacer for chevron */}
             </div>
           {isLoading ? (
@@ -270,16 +316,16 @@ export default function ReportPage() {
               <AccordionItem value={report.id} key={report.id} className="border-b last:border-b-0">
                  <AccordionTrigger className="hover:bg-muted/50 w-full p-0 data-[state=open]:bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background">
                   <div className="flex flex-col md:flex-row flex-1 items-start md:items-center space-y-1 md:space-y-0 md:space-x-4 px-4 py-3 w-full text-left">
-                    <div className="font-medium w-full md:w-[20%] truncate">
+                    <div className="font-medium w-full md:w-[15%] truncate">
                       <span className="md:hidden font-semibold text-xs text-muted-foreground">Unit: </span>{report.unitId}
                     </div>
-                    <div className="text-sm text-muted-foreground w-full md:w-[25%] truncate">
+                    <div className="text-sm text-muted-foreground w-full md:w-[20%] truncate">
                       <span className="md:hidden font-semibold text-xs text-muted-foreground">Date: </span>{report.date}
                     </div>
-                    <div className="text-sm text-muted-foreground w-full md:w-[20%] truncate">
+                    <div className="text-sm text-muted-foreground w-full md:w-[15%] truncate">
                       <span className="md:hidden font-semibold text-xs text-muted-foreground">Operator: </span>{report.operator}
                     </div>
-                    <div className="w-full md:w-[15%]">
+                    <div className="w-full md:w-[10%]">
                        <span className="md:hidden font-semibold text-xs text-muted-foreground">Status: </span>
                       <Badge
                         variant={report.status === 'Safe' ? 'default' : 'destructive'}
@@ -291,10 +337,10 @@ export default function ReportPage() {
                         {report.status}
                       </Badge>
                     </div>
-                    <div className="w-full md:w-[15%] flex items-center md:justify-center">
+                    <div className="w-full md:w-[10%] flex items-center md:justify-center">
                        <span className="md:hidden font-semibold text-xs text-muted-foreground mr-2">Rep. Photo: </span>
                        {isClickablePhoto(report.representativePhotoUrl) ? (
-                          <a href={report.representativePhotoUrl} target="_blank" rel="noopener noreferrer" className="relative group">
+                          <a href={report.representativePhotoUrl} target="_blank" rel="noopener noreferrer" className="relative group" onClick={(e) => e.stopPropagation()}>
                             <Image
                               src={report.representativePhotoUrl}
                               alt={`Inspection for ${report.unitId}`}
@@ -317,6 +363,15 @@ export default function ReportPage() {
                             onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
                           />
                         )}
+                    </div>
+                    <div className="w-full md:w-[25%] flex md:justify-end items-center space-x-2 mt-2 md:mt-0">
+                         <span className="md:hidden font-semibold text-xs text-muted-foreground">Actions: </span>
+                        <Button variant="outline" size="sm" className="text-xs" disabled> {/* onClick={(e) => {e.stopPropagation(); console.log("Edit clicked for " + report.id)}} */}
+                            <Edit className="mr-1 h-3 w-3" /> Edit
+                        </Button>
+                        <Button variant="destructive" size="sm" className="text-xs" onClick={(e) => {e.stopPropagation(); handleOpenDeleteDialog(report.id);}}>
+                            <Trash2 className="mr-1 h-3 w-3" /> Delete
+                        </Button>
                     </div>
                   </div>
                 </AccordionTrigger>
@@ -408,7 +463,7 @@ export default function ReportPage() {
                 <table className="w-full caption-bottom text-sm">
                   <tbody className="[&_tr:last-child]:border-0">
                     <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                      <td colSpan={5} className="p-4 align-middle text-center py-10 text-muted-foreground">
+                      <td colSpan={6} className="p-4 align-middle text-center py-10 text-muted-foreground"> {/* Increased colspan for actions */}
                         No inspection records found with current filters.
                       </td>
                     </tr>
@@ -418,6 +473,26 @@ export default function ReportPage() {
            )}
         </CardContent>
       </Card>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure you want to delete this report?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the inspection report
+              (ID: {reportToDeleteId ? `${reportToDeleteId.substring(0,8)}...` : ''}) from local storage.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setReportToDeleteId(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDelete} className="bg-destructive hover:bg-destructive/90">
+              Delete Report
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
     </div>
   );
 }
