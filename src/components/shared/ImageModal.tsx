@@ -1,7 +1,7 @@
 
 'use client';
 
-import { Dialog, DialogContent, DialogClose } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogClose, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import Image from 'next/image';
 import { X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,9 @@ export default function ImageModal({ isOpen, onClose, imageUrl, altText = "Enlar
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
       <DialogContent className="p-1 sm:p-2 max-w-4xl w-auto bg-background/80 backdrop-blur-md border-none shadow-2xl rounded-lg">
+        <DialogHeader className="sr-only">
+          <DialogTitle>{altText || "Enlarged Image View"}</DialogTitle>
+        </DialogHeader>
         <div className="relative w-full h-auto max-h-[85vh] aspect-[16/10]">
           <Image
             src={imageUrl}
