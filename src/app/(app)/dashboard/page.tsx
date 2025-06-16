@@ -2,9 +2,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import DowntimeOverviewChart from '@/components/dashboard/DowntimeOverviewChart';
+import DepartmentSafetyDonut from '@/components/dashboard/DepartmentSafetyDonut';
 import UnitHistory from '@/components/dashboard/UnitHistory';
-import DepartmentalDailyMetrics from '@/components/dashboard/DepartmentalDailyMetrics';
 import DepartmentMonthlyTrendChart from '@/components/dashboard/DepartmentMonthlyTrendChart';
 import UninspectedMHEsChart from '@/components/dashboard/UninspectedMHEsChart';
 import UninspectedMheUnitCodesChart from '@/components/dashboard/UninspectedMheUnitCodesChart';
@@ -12,10 +11,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/context/AuthContext';
 import { Input } from '@/components/ui/input';
-import { CheckCircle, AlertTriangle, RotateCcw, Filter, CalendarDays, BarChartHorizontalBig } from 'lucide-react';
+import { CheckCircle, AlertTriangle, RotateCcw, Filter, CalendarDays, BarChartHorizontalBig, ListChecks } from 'lucide-react';
 import type { StoredInspectionReport, StoredDowntimeLog, Department, MheUnit } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { format, parseISO } from 'date-fns';
+import { format, parseISO, startOfDay, endOfDay } from 'date-fns';
+import DowntimeOverviewChart from '@/components/dashboard/DowntimeOverviewChart';
+
 
 interface DashboardStats {
   totalInspectionsToday: number;
@@ -111,7 +112,7 @@ export default function DashboardPage() {
         unsafeForkliftsToday: unsafeTodayCount,
       });
       if (typeof window !== 'undefined') { 
-        toast({ title: "Dashboard Loaded", description: "Data refreshed from local storage.", duration: 3000 });
+        // toast({ title: "Dashboard Loaded", description: "Data refreshed from local storage.", duration: 3000 });
       }
 
     } catch (error) {
@@ -154,18 +155,15 @@ export default function DashboardPage() {
   };
 
   const filteredReportsForCharts = useMemo(() => {
-    if (!activeFilters.start && !activeFilters.end) return allReports; // For monthly trends, allow all if no filter
+    if (!activeFilters.start && !activeFilters.end) return allReports; 
     return allReports.filter(report => {
       try {
         const reportDate = parseISO(report.date);
-        const start = activeFilters.start ? parseISO(activeFilters.start) : null;
-        const end = activeFilters.end ? parseISO(activeFilters.end) : null;
+        const start = activeFilters.start ? startOfDay(parseISO(activeFilters.start)) : null;
+        const end = activeFilters.end ? endOfDay(parseISO(activeFilters.end)) : null;
         
-        if (start && reportDate < startOfDay(start)) return false;
-        if (end) {
-            const dayEnd = endOfDay(end);
-            if (reportDate > dayEnd) return false;
-        }
+        if (start && reportDate < start) return false;
+        if (end && reportDate > end) return false;
         return true;
       } catch (e) {
         console.warn("Error parsing date for filtering reports", report.date, e);
@@ -175,18 +173,15 @@ export default function DashboardPage() {
   }, [allReports, activeFilters]);
 
   const filteredDowntimeLogsForChart = useMemo(() => {
-    if (!activeFilters.start && !activeFilters.end) return allDowntimeLogs; // For downtime overview, allow all if no filter
+    if (!activeFilters.start && !activeFilters.end) return allDowntimeLogs; 
     return allDowntimeLogs.filter(log => {
       try {
-        const logDate = parseISO(log.startTime); // Assuming startTime determines relevance to period
-        const start = activeFilters.start ? parseISO(activeFilters.start) : null;
-        const end = activeFilters.end ? parseISO(activeFilters.end) : null;
+        const logDate = parseISO(log.startTime); 
+        const start = activeFilters.start ? startOfDay(parseISO(activeFilters.start)) : null;
+        const end = activeFilters.end ? endOfDay(parseISO(activeFilters.end)) : null;
 
-        if (start && logDate < startOfDay(start)) return false;
-        if (end) {
-            const dayEnd = endOfDay(end);
-            if (logDate > dayEnd) return false;
-        }
+        if (start && logDate < start) return false;
+        if (end && logDate > end) return false;
         return true;
       } catch (e) {
          console.warn("Error parsing date for filtering downtime logs", log.startTime, e);
@@ -239,14 +234,35 @@ export default function DashboardPage() {
         </Card>
       </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        <DepartmentalDailyMetrics departments={departments} mheUnits={mheUnits} reports={allReports} isLoading={isLoading} />
-      </div>
+      <Card className="shadow-md">
+        <CardHeader>
+          <CardTitle className="text-xl flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary"/>Departmental Daily Safety Overview</CardTitle>
+          <CardDescription>Summary of MHE safety status by department for today. These cards are not affected by the date filter below.</CardDescription>
+        </CardHeader>
+        <CardContent>
+            {isLoading && departments.length === 0 && <p>Loading department data...</p>}
+            {!isLoading && departments.length === 0 && <p className="text-muted-foreground">No departments configured. Please add departments in Data Management.</p>}
+            {departments.length > 0 && (
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {departments.map(dept => (
+                        <DepartmentSafetyDonut
+                            key={dept.id}
+                            department={dept}
+                            mheUnitsInDept={mheUnits.filter(mhe => mhe.department_id === dept.id && mhe.status !== 'inactive')}
+                            reports={allReports} // Pass all reports, component will filter for today and dept
+                            isLoading={isLoading}
+                        />
+                    ))}
+                </div>
+            )}
+        </CardContent>
+      </Card>
+
 
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle className="text-xl flex items-center"><Filter className="mr-2 h-5 w-5 text-primary"/>Chart Filters</CardTitle>
-          <CardDescription>Apply date range filters to the charts below. Uninspected MHE charts default to today if no filter is set.</CardDescription>
+          <CardDescription>Apply date range filters to the trend and analysis charts below. Uninspected MHE charts default to today if no filter is set.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col md:flex-row gap-4 items-end">
           <div className="flex-1">
@@ -279,7 +295,7 @@ export default function DashboardPage() {
       <UninspectedMheUnitCodesChart
         departments={departments}
         mheUnits={mheUnits}
-        reports={allReports} // Pass all reports, component will filter internally
+        reports={allReports} 
         filterStartDate={activeFilters.start}
         filterEndDate={activeFilters.end}
         isLoading={isLoading}
@@ -289,7 +305,7 @@ export default function DashboardPage() {
         <UninspectedMHEsChart 
             departments={departments} 
             mheUnits={mheUnits} 
-            reports={allReports} // Pass all reports, component will filter internally
+            reports={allReports} 
             filterStartDate={activeFilters.start} 
             filterEndDate={activeFilters.end}
             isLoading={isLoading}
@@ -326,3 +342,5 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+    

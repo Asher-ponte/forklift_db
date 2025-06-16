@@ -1,6 +1,10 @@
 
 'use client';
 
+// This file is no longer used and can be deleted.
+// The functionality has been replaced by DepartmentSafetyDonut.tsx
+// and integrated into the main dashboard page.
+
 import { useMemo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -65,7 +69,7 @@ export default function DepartmentalDailyMetrics({ departments, mheUnits, report
   if (isLoading) {
     return (
       <>
-        {[...Array(3)].map((_, i) => ( // Skeleton for 3 cards
+        {[...Array(3)].map((_, i) => ( 
           <Card key={`skeleton-${i}`} className="shadow-lg">
             <CardHeader>
               <CardTitle className="flex items-center text-lg"><Building className="mr-2 h-5 w-5 text-primary"/> <div className="h-5 w-2/3 bg-muted rounded animate-pulse"></div></CardTitle>
@@ -137,3 +141,5 @@ export default function DepartmentalDailyMetrics({ departments, mheUnits, report
     </>
   );
 }
+
+    
