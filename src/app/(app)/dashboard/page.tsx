@@ -236,7 +236,7 @@ export default function DashboardPage() {
       
       <Card className="shadow-md">
         <CardHeader>
-          <CardTitle className="text-xl flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary"/>Departmental Daily Safety Overview</CardTitle>
+          <CardTitle className="text-xl flex items-center"><ListChecks className="mr-2 h-5 w-5 text-primary"/>Departmental MHE Overview</CardTitle>
           <CardDescription>Summary of MHE safety status by department for today. These cards are not affected by the date filter below.</CardDescription>
         </CardHeader>
         <CardContent>
@@ -342,5 +342,7 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+    
 
     
