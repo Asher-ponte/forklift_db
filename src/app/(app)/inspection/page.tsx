@@ -12,7 +12,7 @@ import type { StoredInspectionReport, StoredDowntimeLog, DowntimeUnsafeItem } fr
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle, Send, Edit3, Warehouse, TruckIcon, Loader2 } from 'lucide-react';
+import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle, Send, Edit3, Warehouse, TruckIcon, Loader2, Info } from 'lucide-react';
 import Link from 'next/link';
 import {
   AlertDialog,
@@ -23,6 +23,8 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
 import { v4 as uuidv4 } from 'uuid';
 
 // --- LocalStorage Helper ---
@@ -111,6 +113,9 @@ export default function InspectionPage() {
   const { toast } = useToast();
   const { user } = useAuth();
 
+  const [previousReport, setPreviousReport] = useState<StoredInspectionReport | null>(null);
+  const [isLoadingPreviousReport, setIsLoadingPreviousReport] = useState(false);
+
   // Load Departments and MHE Units from localStorage
   useEffect(() => {
     setIsLoadingInitialData(true);
@@ -173,13 +178,14 @@ export default function InspectionPage() {
     setCurrentItemIdToInspect(initialItems.length > 0 ? initialItems[0].checklistItemId : null);
     setShowUnsafeWarningDialog(false);
     setIsSubmittingReport(false);
+    setPreviousReport(null); 
     if (resetSelections) {
       setSelectedDepartmentId('');
       setSelectedMheId('');
       setIsInspectionSetupConfirmed(false);
       setMasterChecklist([]); 
     }
-  }, [masterChecklist]);
+  }, [masterChecklist, setPreviousReport]);
 
 
   useEffect(() => {
@@ -222,6 +228,34 @@ export default function InspectionPage() {
       question: foundItem.question,
     };
   }, [currentItemIdToInspect, masterChecklist]);
+
+  const selectedMheDetails = useMemo(() => {
+    return mheUnits.find(mhe => mhe.id === selectedMheId);
+  }, [selectedMheId, mheUnits]);
+
+  // Load previous inspection report
+  useEffect(() => {
+    if (selectedMheDetails?.unit_code && isInspectionSetupConfirmed) {
+      setIsLoadingPreviousReport(true);
+      setPreviousReport(null); 
+      try {
+        const allStoredReports = getFromLocalStorage<StoredInspectionReport[]>(REPORTS_STORAGE_KEY, []);
+        const reportsForUnit = allStoredReports
+          .filter(report => report.unitId === selectedMheDetails.unit_code)
+          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+        
+        setPreviousReport(reportsForUnit.length > 0 ? reportsForUnit[0] : null);
+      } catch (error) {
+        console.error("Error loading previous report:", error);
+        toast({ title: "Error Loading Previous Report", description: (error instanceof Error && error.message) || "Could not load data.", variant: "destructive" });
+        setPreviousReport(null);
+      } finally {
+        setIsLoadingPreviousReport(false);
+      }
+    } else {
+      setPreviousReport(null); 
+    }
+  }, [selectedMheDetails, isInspectionSetupConfirmed, toast]);
 
   const handleStartInspectionSetup = () => {
     if (!selectedDepartmentId) {
@@ -274,9 +308,6 @@ export default function InspectionPage() {
     !inspectionItems.find(iItem => iItem.checklistItemId === mItem.id)?.completed
   ), [masterChecklist, inspectionItems]);
 
-  const selectedMheDetails = useMemo(() => {
-    return mheUnits.find(mhe => mhe.id === selectedMheId);
-  }, [selectedMheId, mheUnits]);
 
   const handleSubmitReport = async () => {
     if (!isInspectionComplete || !user || !selectedMheId || totalItemsCount === 0) {
@@ -477,7 +508,66 @@ export default function InspectionPage() {
         </CardContent>
       </Card>
 
-      {totalItemsCount === 0 && !isLoadingChecklist ? (
+      {/* Previous Inspection Report Display Area */}
+      {isInspectionSetupConfirmed && selectedMheDetails && (
+        <Card className="shadow-md">
+            <CardHeader>
+                <CardTitle className="text-xl flex items-center">
+                    <Info className="mr-2 h-5 w-5 text-primary" /> Previous Inspection Summary
+                </CardTitle>
+                <CardDescription>
+                    For MHE: {selectedMheDetails.name} ({selectedMheDetails.unit_code})
+                </CardDescription>
+            </CardHeader>
+            <CardContent>
+                {isLoadingPreviousReport ? (
+                    <div className="flex items-center text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading previous report...</div>
+                ) : previousReport ? (
+                    <Accordion type="single" collapsible className="w-full" defaultValue="previous-report-details">
+                        <AccordionItem value="previous-report-details">
+                            <AccordionTrigger className="text-base hover:no-underline focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background rounded-md px-2 -mx-2">
+                                <div className="flex justify-between items-center w-full">
+                                    <span className="text-left">
+                                        Last Inspected: {new Date(previousReport.date).toLocaleString()}
+                                    </span>
+                                    <Badge 
+                                        variant={previousReport.status === 'Safe' ? 'default' : 'destructive'}
+                                        className={previousReport.status === 'Safe' ? 'bg-green-500 hover:bg-green-600 text-white' : 'bg-red-500 hover:bg-red-600 text-white'}
+                                    >
+                                        {previousReport.status}
+                                    </Badge>
+                                </div>
+                            </AccordionTrigger>
+                            <AccordionContent className="pt-4 space-y-3">
+                                <p><span className="font-semibold">Operator:</span> {previousReport.operator}</p>
+                                <p><span className="font-semibold">Report ID:</span> <span className="text-xs font-mono">{previousReport.id}</span></p>
+                                {previousReport.status === 'Unsafe' && previousReport.items.some(item => !item.is_safe) && (
+                                    <div>
+                                        <h4 className="font-semibold text-destructive mb-1">Unsafe Items Noted:</h4>
+                                        <ul className="list-disc list-inside pl-2 space-y-1 text-sm">
+                                            {previousReport.items.filter(item => !item.is_safe).map((item, index) => (
+                                                <li key={`unsafe-${index}`}>
+                                                    {item.part_name}
+                                                    {item.remarks && <span className="text-muted-foreground"> - {item.remarks}</span>}
+                                                </li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+                                 {previousReport.status === 'Safe' && (
+                                    <p className="text-green-600">All items were reported as safe in the previous inspection.</p>
+                                )}
+                            </AccordionContent>
+                        </AccordionItem>
+                    </Accordion>
+                ) : (
+                    <p className="text-muted-foreground">No previous inspection data found for this MHE unit.</p>
+                )}
+            </CardContent>
+        </Card>
+      )}
+
+      {totalItemsCount === 0 && !isLoadingChecklist && isInspectionSetupConfirmed ? (
          <Card className="shadow-md">
             <CardHeader><CardTitle className="text-xl text-destructive">No Inspection Items</CardTitle></CardHeader>
             <CardContent>
@@ -488,7 +578,7 @@ export default function InspectionPage() {
                 </p>
             </CardContent>
          </Card>
-      ) : !isInspectionComplete ? (
+      ) : isInspectionSetupConfirmed && !isInspectionComplete ? (
         <>
           <CompletionProgress completedItems={completedItemsCount} totalItems={totalItemsCount} />
 
@@ -560,7 +650,7 @@ export default function InspectionPage() {
             </CardContent>
           </Card>
         </>
-      ) : ( 
+      ) : isInspectionSetupConfirmed && isInspectionComplete && totalItemsCount > 0 ? ( 
         <div className="text-center mt-8 space-y-6">
           <Card className="shadow-lg w-full max-w-md mx-auto">
             <CardHeader className="text-center">
@@ -591,7 +681,7 @@ export default function InspectionPage() {
             </CardContent>
           </Card>
         </div>
-      )}
+      ) : null}
 
       <SafetyCheckModal
         isOpen={isModalOpen}
@@ -621,5 +711,3 @@ export default function InspectionPage() {
     </div>
   );
 }
-
-
