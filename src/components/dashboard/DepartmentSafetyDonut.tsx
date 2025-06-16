@@ -3,7 +3,7 @@
 
 import { useMemo } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { ChartContainer, ChartTooltip, ChartTooltipContent, ChartLegend, ChartLegendContent } from "@/components/ui/chart";
 import { PieChart, Pie, Cell, ResponsiveContainer, Label } from "recharts";
 import { Building, Loader2 } from 'lucide-react';
 import type { Department, MheUnit, StoredInspectionReport } from '@/lib/types';
@@ -18,11 +18,9 @@ interface DepartmentSafetyDonutProps {
 const chartColors = {
   safe: "hsl(var(--chart-2))", // Greenish
   unsafe: "hsl(var(--chart-1))", // Reddish/Orange
-  notInspected: "hsl(var(--muted))", // Muted gray
+  notInspected: "hsl(50, 90%, 60%)", // Yellow
 };
 
-// This config is mainly for ChartContainer to set up CSS variables if needed,
-// actual colors are applied directly in `Cell` components.
 const chartConfig = {
   safe: { label: "Safe Today", color: chartColors.safe },
   unsafe: { label: "Unsafe Today", color: chartColors.unsafe },
@@ -69,7 +67,7 @@ export default function DepartmentSafetyDonut({ department, mheUnitsInDept, repo
       { name: 'Safe Today', value: safeTodayCount, fill: chartColors.safe },
       { name: 'Unsafe Today', value: unsafeTodayCount, fill: chartColors.unsafe },
       { name: 'Not Inspected Today', value: notInspectedTodayCount, fill: chartColors.notInspected },
-    ].filter(item => item.value >= 0); // Keep segments even if value is 0 to maintain legend
+    ].filter(item => item.value >= 0); 
 
     return { data, totalMHEs };
   }, [mheUnitsInDept, reports]);
@@ -95,12 +93,11 @@ export default function DepartmentSafetyDonut({ department, mheUnitsInDept, repo
   
   const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, value, name }: any) => {
     const RADIAN = Math.PI / 180;
-    // Adjust label radius to be closer to the segment, but not too close to edge
     const radius = innerRadius + (outerRadius - innerRadius) * 0.65; 
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
 
-    if (value === 0 || percent < 0.05) return null; // Don't render label for zero or very small segments
+    if (value === 0 || percent < 0.05) return null;
 
     return (
       <text
@@ -135,7 +132,7 @@ export default function DepartmentSafetyDonut({ department, mheUnitsInDept, repo
         ) : (
           <ChartContainer config={chartConfig} className="w-full h-full">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart margin={{ top: 10, right: 10, bottom: 10, left: 10 }}>
+              <PieChart margin={{ top: 5, right: 5, bottom: 30, left: 5 }}> {/* Adjusted bottom margin for legend */}
                 <ChartTooltip
                   cursor={true}
                   content={<ChartTooltipContent nameKey="name" />}
@@ -174,6 +171,11 @@ export default function DepartmentSafetyDonut({ department, mheUnitsInDept, repo
                     }
                   />
                 </Pie>
+                <ChartLegend 
+                  content={<ChartLegendContent nameKey="name" className="text-xs"/>} 
+                  verticalAlign="bottom" 
+                  wrapperStyle={{paddingTop: '10px'}}
+                />
               </PieChart>
             </ResponsiveContainer>
           </ChartContainer>
@@ -183,5 +185,3 @@ export default function DepartmentSafetyDonut({ department, mheUnitsInDept, repo
   );
 }
 
-
-    
