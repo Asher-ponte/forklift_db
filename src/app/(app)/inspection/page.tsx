@@ -12,8 +12,9 @@ import type { StoredInspectionReport, StoredDowntimeLog, DowntimeUnsafeItem } fr
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle, Send, Edit3, Warehouse, TruckIcon, Loader2, Info } from 'lucide-react';
+import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle, Send, Edit3, Warehouse, TruckIcon, Loader2, Info, ExternalLink, ImageOff } from 'lucide-react';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -24,9 +25,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
-import { Badge } from "@/components/ui/badge";
+import { Badge } from '@/components/ui/badge';
 import { v4 as uuidv4 } from 'uuid';
 import { isValid, parseISO } from 'date-fns';
+import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
 
 // --- LocalStorage Helper ---
 const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
@@ -94,6 +96,10 @@ const CHECKLIST_ITEMS_KEY = 'forkliftChecklistMasterItems';
 const DEPARTMENTS_KEY = 'forkliftDepartments';
 const MHE_UNITS_KEY = 'forkliftMheUnits';
 
+const isClickablePhoto = (url: string | null | undefined): url is string => {
+  return !!(url && url !== PLACEHOLDER_IMAGE_DATA_URL && !url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP"));
+}
+
 export default function InspectionPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
   const [mheUnits, setMheUnits] = useState<MheUnit[]>([]);
@@ -137,7 +143,7 @@ export default function InspectionPage() {
     } finally {
       setIsLoadingInitialData(false);
     }
-  }, []); 
+  }, [toast]); 
 
   const filteredMHEs = useMemo(() => {
     if (!selectedDepartmentId) return [];
@@ -166,7 +172,7 @@ export default function InspectionPage() {
       }
       setIsLoadingChecklist(false);
     }
-  }, [isInspectionSetupConfirmed]);
+  }, [isInspectionSetupConfirmed, toast]);
 
   const resetInspectionState = useCallback((resetSelections = false) => {
     const initialItems = masterChecklist.map(item => ({
@@ -183,7 +189,6 @@ export default function InspectionPage() {
     setCurrentItemIdToInspect(initialItems.length > 0 ? initialItems[0].checklistItemId : null);
     setShowUnsafeWarningDialog(false);
     setIsSubmittingReport(false);
-    // Do NOT setPreviousReport(null) here; it's handled by its own effect.
     if (resetSelections) {
       setSelectedDepartmentId('');
       setSelectedMheId('');
@@ -300,7 +305,9 @@ export default function InspectionPage() {
       setCurrentItemIdToInspect(itemToInspect.id);
       setIsModalOpen(true);
     } else {
-      toast({ title: "Error", description: "Checklist item not found.", variant: "destructive" });
+      if (typeof window !== 'undefined') {
+        toast({ title: "Error", description: "Checklist item not found.", variant: "destructive" });
+      }
     }
   };
 
@@ -568,12 +575,34 @@ export default function InspectionPage() {
                                 <p><span className="font-semibold">Report ID:</span> <span className="text-xs font-mono">{previousReport.id}</span></p>
                                 {previousReport.status === 'Unsafe' && previousReport.items.some(item => item.is_safe === false) && (
                                     <div>
-                                        <h4 className="font-semibold text-destructive mb-1">Unsafe Items Noted:</h4>
-                                        <ul className="list-disc list-inside pl-2 space-y-1 text-sm">
+                                        <h4 className="font-semibold text-destructive mb-2">Unsafe Items Noted:</h4>
+                                        <ul className="space-y-3">
                                             {previousReport.items.filter(item => item.is_safe === false).map((item, index) => (
-                                                <li key={`unsafe-${index}`}>
-                                                    {item.part_name}
-                                                    {item.remarks && <span className="text-muted-foreground"> - {item.remarks}</span>}
+                                                <li key={`unsafe-${index}`} className="flex items-start space-x-3 p-2 border-l-4 border-destructive bg-destructive/5 rounded-md">
+                                                    <div className="flex-shrink-0 w-16 h-12 relative">
+                                                        {isClickablePhoto(item.photo_url) ? (
+                                                          <a href={item.photo_url!} target="_blank" rel="noopener noreferrer" className="relative group block w-full h-full">
+                                                            <Image
+                                                              src={item.photo_url!}
+                                                              alt={item.part_name || 'Unsafe item image'}
+                                                              layout="fill"
+                                                              objectFit="cover"
+                                                              className="rounded-md group-hover:opacity-80 transition-opacity"
+                                                              data-ai-hint={item.part_name ? item.part_name.toLowerCase().split(' ').slice(0,2).join(' ') : "defect detail"}
+                                                              onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
+                                                            />
+                                                            <ExternalLink className="absolute top-1 right-1 h-3 w-3 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-sm p-0.5" />
+                                                          </a>
+                                                        ) : (
+                                                          <div className="w-full h-full flex items-center justify-center bg-muted rounded-md">
+                                                            <ImageOff className="h-6 w-6 text-muted-foreground" />
+                                                          </div>
+                                                        )}
+                                                    </div>
+                                                    <div className="flex-grow">
+                                                        <p className="font-medium text-sm">{item.part_name}</p>
+                                                        {item.remarks && <p className="text-xs text-muted-foreground mt-0.5">{item.remarks}</p>}
+                                                    </div>
                                                 </li>
                                             ))}
                                         </ul>
