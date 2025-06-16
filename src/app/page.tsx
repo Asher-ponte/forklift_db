@@ -1,3 +1,4 @@
+
 'use client';
 
 import { useEffect } from 'react';
@@ -12,7 +13,14 @@ export default function HomePage() {
   useEffect(() => {
     if (!loading) {
       if (user) {
-        router.replace('/dashboard');
+        if (user.role === 'operator') {
+          router.replace('/inspection');
+        } else if (user.role === 'supervisor') {
+          router.replace('/dashboard');
+        } else {
+          // Fallback, though role should always be operator or supervisor
+          router.replace('/login');
+        }
       } else {
         router.replace('/login');
       }

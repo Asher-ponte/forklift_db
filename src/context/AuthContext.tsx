@@ -58,7 +58,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       variant: "default",
     });
 
-    router.push('/dashboard');
+    if (loggedInUser.role === 'operator') {
+      router.push('/inspection');
+    } else {
+      router.push('/dashboard');
+    }
     setLoading(false);
   };
 

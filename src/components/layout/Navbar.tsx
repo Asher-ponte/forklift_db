@@ -11,7 +11,7 @@ import { cn } from '@/lib/utils';
 import { useState, useEffect } from 'react';
 
 const allNavItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['operator', 'supervisor'] },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['supervisor'] }, // Dashboard only for supervisor
   { href: '/inspection', label: 'Inspection', icon: ScanLine, roles: ['operator', 'supervisor'] },
   { href: '/report', label: 'Forklift Report', icon: FileText, roles: ['operator', 'supervisor'] },
   { href: '/downtime', label: 'Downtime Log', icon: Clock, roles: ['operator', 'supervisor'] },
@@ -30,6 +30,8 @@ export default function Navbar() {
   }, []);
 
   const visibleNavItems = allNavItems.filter(item => user && item.roles.includes(user.role));
+
+  const logoLinkHref = user?.role === 'operator' ? '/inspection' : '/dashboard';
 
   const NavLink = ({ href, label, icon: Icon, onClick }: { href: string, label: string, icon: React.ElementType, onClick?: () => void }) => (
     <Link href={href} passHref>
@@ -93,7 +95,8 @@ export default function Navbar() {
           </div>
           <div className="h-8 w-8 bg-muted rounded-md animate-pulse md:hidden"></div>
           <div className="hidden md:flex items-center space-x-2">
-            {[...Array(allNavItems.length)].map((_, i) => <div key={i} className="h-8 w-24 bg-muted rounded-md animate-pulse"></div>)}
+            {/* Simplified skeleton for nav items */}
+            {[...Array(5)].map((_, i) => <div key={i} className="h-8 w-24 bg-muted rounded-md animate-pulse"></div>)}
             <div className="h-8 w-8 bg-muted rounded-full animate-pulse"></div>
           </div>
         </div>
@@ -105,7 +108,7 @@ export default function Navbar() {
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="container flex h-16 items-center justify-between">
-        <Link href="/dashboard" className="flex items-center">
+        <Link href={logoLinkHref} className="flex items-center">
           <Truck className="h-7 w-7 text-primary" />
           <span className="ml-2 font-headline text-xl font-semibold">ForkLift Check</span>
         </Link>
@@ -130,7 +133,7 @@ export default function Navbar() {
             <SheetContent side="left" className="w-72 p-0 flex flex-col">
               <SheetHeader className="p-4 border-b border-border text-left">
                 <SheetTitle>
-                  <Link href="/dashboard" className="flex items-center" onClick={() => setIsMobileMenuOpen(false)}>
+                  <Link href={logoLinkHref} className="flex items-center" onClick={() => setIsMobileMenuOpen(false)}>
                     <Truck className="h-7 w-7 text-primary" />
                     <span className="ml-2 font-headline text-xl font-semibold">ForkLift Check</span>
                   </Link>
