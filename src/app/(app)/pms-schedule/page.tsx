@@ -17,41 +17,11 @@ import { CalendarCheck, CheckSquare, Filter, ListFilter, Loader2, PlusCircle, Re
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import type { MheUnit, StoredPmsTaskMaster, StoredPmsScheduleEntry, PmsScheduleDisplayEntry } from '@/lib/types';
-import { v4 as uuidv4 } from 'uuid';
+import * as apiService from '@/services/apiService';
 import { format, parseISO, addDays, addWeeks, addMonths, isValid, isFuture, differenceInDays } from 'date-fns';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-
-// --- LocalStorage Keys ---
-const MHE_UNITS_KEY = 'forkliftMheUnits';
-const PMS_TASK_MASTER_KEY = 'forkliftPmsTaskMaster';
-const PMS_SCHEDULE_ENTRIES_KEY = 'forkliftPmsScheduleEntries';
-
-// --- Helper functions for localStorage ---
-const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
-  if (typeof window === 'undefined') return defaultValue;
-  const item = localStorage.getItem(key);
-  if (item) {
-    try { return JSON.parse(item) as T; }
-    catch (e) { console.warn(`Error parsing localStorage item ${key}:`, e); return defaultValue; }
-  }
-  return defaultValue;
-};
-
-const saveToLocalStorage = <T>(key: string, value: T): void => {
-  if (typeof window === 'undefined') return;
-  try { localStorage.setItem(key, JSON.stringify(value)); }
-  catch (e) { console.error(`Error saving to localStorage item ${key}:`, e); }
-};
-
-const MOCK_PMS_TASK_MASTERS: StoredPmsTaskMaster[] = [
-  { id: uuidv4(), name: 'Daily Pre-Operational Check', description: 'Visual inspection, fluid checks, safety features.', frequency_unit: 'days', frequency_value: 1, category: 'General Safety', is_active: true, estimated_duration_minutes: 15 },
-  { id: uuidv4(), name: 'Weekly Lubrication', description: 'Lubricate key moving parts as per manual.', frequency_unit: 'weeks', frequency_value: 1, category: 'Mechanical', is_active: true, estimated_duration_minutes: 30 },
-  { id: uuidv4(), name: 'Monthly Hydraulic System Check', description: 'Inspect hoses, connections, and fluid levels. Check for leaks.', frequency_unit: 'months', frequency_value: 1, category: 'Hydraulics', is_active: true, estimated_duration_minutes: 60 },
-  { id: uuidv4(), name: 'Engine Oil & Filter Change (ICE)', description: 'Change engine oil and filter for Internal Combustion Engine models.', frequency_unit: 'operating_hours', frequency_value: 250, category: 'Engine', is_active: true, estimated_duration_minutes: 90 },
-  { id: uuidv4(), name: 'Battery Watering & Check (Electric)', description: 'Check and top-up battery water levels, clean terminals.', frequency_unit: 'weeks', frequency_value: 1, category: 'Electrical', is_active: true, estimated_duration_minutes: 45 },
-];
 
 const ALL_MHES_SELECT_VALUE = "__ALL_MHES__";
 const ALL_STATUS_SELECT_VALUE = "__ALL_STATUS__";
@@ -135,21 +105,13 @@ export default function PmsSchedulePage() {
     resolver: zodResolver(pmsScheduleEntrySchema),
   });
 
-
-  const initializeMockData = useCallback(() => {
-    const storedTasks = getFromLocalStorage<StoredPmsTaskMaster[]>(PMS_TASK_MASTER_KEY, []);
-    if (storedTasks.length === 0) {
-      saveToLocalStorage(PMS_TASK_MASTER_KEY, MOCK_PMS_TASK_MASTERS);
-    }
-  }, []);
-
   const fetchMheUnitsCallback = useCallback(async () => {
     setIsDataLoading(prev => ({ ...prev, mhe: true }));
     try {
-      const fetchedMheUnits = getFromLocalStorage<MheUnit[]>(MHE_UNITS_KEY, []);
+      const fetchedMheUnits = await apiService.fetchMheUnits();
       setMheUnits(fetchedMheUnits);
     } catch (error) {
-      toast({ title: "Error Loading MHE Units", variant: "destructive" });
+      toast({ title: "Error Loading MHE Units", description: (error instanceof Error) ? error.message : "API Error.", variant: "destructive" });
     } finally {
       setIsDataLoading(prev => ({ ...prev, mhe: false }));
     }
@@ -157,35 +119,38 @@ export default function PmsSchedulePage() {
   
   const fetchTaskMastersCallback = useCallback(async () => {
     setIsDataLoading(prev => ({ ...prev, tasks: true }));
-    initializeMockData(); 
     try {
-      const fetchedTaskMasters = getFromLocalStorage<StoredPmsTaskMaster[]>(PMS_TASK_MASTER_KEY, []);
+      const fetchedTaskMasters = await apiService.fetchPmsTaskMasters();
       setTaskMasters(fetchedTaskMasters);
     } catch (error) {
-      toast({ title: "Error Loading Task Masters", variant: "destructive" });
+      toast({ title: "Error Loading Task Masters", description: (error instanceof Error) ? error.message : "API Error.", variant: "destructive" });
     } finally {
       setIsDataLoading(prev => ({ ...prev, tasks: false }));
     }
-  }, [toast, initializeMockData]);
+  }, [toast]);
 
   const fetchScheduleEntriesCallback = useCallback(async () => {
     setIsDataLoading(prev => ({ ...prev, schedules: true }));
     try {
-      const fetchedScheduleEntries = getFromLocalStorage<StoredPmsScheduleEntry[]>(PMS_SCHEDULE_ENTRIES_KEY, []);
+      let fetchedScheduleEntries = await apiService.fetchPmsScheduleEntries();
       const today = new Date();
       today.setHours(0,0,0,0); 
+      
+      const updatesToMake: Promise<any>[] = [];
       const updatedEntries = fetchedScheduleEntries.map(entry => {
         try {
           if (entry.status === 'Pending' && parseISO(entry.due_date) < today) {
-            return { ...entry, status: 'Overdue' as 'Pending' | 'In Progress' | 'Completed' | 'Overdue' | 'Skipped' };
+            const updatedEntry = { ...entry, status: 'Overdue' as 'Pending' | 'In Progress' | 'Completed' | 'Overdue' | 'Skipped' };
+            updatesToMake.push(apiService.updatePmsScheduleEntry(entry.id, { status: 'Overdue'}));
+            return updatedEntry;
           }
         } catch(e){ /* Ignore invalid date format for status update */ }
         return entry;
       });
-      setScheduleEntries(updatedEntries);
-      saveToLocalStorage(PMS_SCHEDULE_ENTRIES_KEY, updatedEntries); // Save updated statuses
+      await Promise.all(updatesToMake); // Wait for all API updates to complete
+      setScheduleEntries(updatedEntries); // Update local state after API calls
     } catch (error) {
-      toast({ title: "Error Loading Schedule Entries", variant: "destructive" });
+      toast({ title: "Error Loading/Updating Schedule Entries", description: (error instanceof Error) ? error.message : "API Error.", variant: "destructive" });
     } finally {
       setIsDataLoading(prev => ({ ...prev, schedules: false }));
     }
@@ -200,7 +165,7 @@ export default function PmsSchedulePage() {
             fetchTaskMastersCallback(),
             fetchScheduleEntriesCallback()
         ]);
-        toast({ title: "PMS Data Loaded", description: "Fetched MHEs, Task Masters, and Schedule Entries.", duration: 2000});
+        toast({ title: "PMS Data Loaded", description: "Fetched data from API.", duration: 2000});
         setIsLoading(false);
     };
     loadAllData();
@@ -294,7 +259,7 @@ export default function PmsSchedulePage() {
     setIsCompleteModalOpen(true);
   };
 
-  const handleMarkAsComplete = () => {
+  const handleMarkAsComplete = async () => {
     if (!selectedEntryForCompletion || !user || !completionDate) {
       toast({title: "Error", description: "Completion date is required.", variant: "destructive"});
       return;
@@ -311,51 +276,44 @@ export default function PmsSchedulePage() {
       toast({title: "Error", description: "Invalid completion date format.", variant: "destructive"});
       return;
     }
-
-
-    const updatedEntries = scheduleEntries.map(entry =>
-      entry.id === selectedEntryForCompletion.id
-        ? {
-            ...entry,
-            status: 'Completed' as 'Completed',
-            completion_date: parsedCompletionDate.toISOString(),
-            notes: completionNotes,
-            serviced_by_user_id: user.id,
-            serviced_by_username: user.username,
-          }
-        : entry
-    );
-    saveToLocalStorage(PMS_SCHEDULE_ENTRIES_KEY, updatedEntries);
     
-    toast({ title: "Task Completed", description: `${selectedEntryForCompletion.task_name} for ${selectedEntryForCompletion.mhe_unit_code} marked as complete.` });
-    
-    const completedTaskMaster = taskMasters.find(tm => tm.id === selectedEntryForCompletion.pms_task_master_id);
-    if (completedTaskMaster && completedTaskMaster.frequency_unit !== 'operating_hours' && completedTaskMaster.is_active) {
-      let nextDueDate: Date;
-      const currentCompletionDate = parsedCompletionDate;
-      switch(completedTaskMaster.frequency_unit) {
-        case 'days': nextDueDate = addDays(currentCompletionDate, completedTaskMaster.frequency_value); break;
-        case 'weeks': nextDueDate = addWeeks(currentCompletionDate, completedTaskMaster.frequency_value); break;
-        case 'months': nextDueDate = addMonths(currentCompletionDate, completedTaskMaster.frequency_value); break;
-        default: nextDueDate = addDays(currentCompletionDate, 30); 
-      }
-      const newScheduleEntry: StoredPmsScheduleEntry = {
-        id: uuidv4(),
-        mhe_unit_id: selectedEntryForCompletion.mhe_unit_id,
-        pms_task_master_id: selectedEntryForCompletion.pms_task_master_id,
-        due_date: format(nextDueDate, 'yyyy-MM-dd'),
-        status: 'Pending',
+    try {
+      const updatedEntryData = {
+        status: 'Completed' as 'Completed',
+        completion_date: parsedCompletionDate.toISOString(),
+        notes: completionNotes,
+        serviced_by_user_id: user.id, // Assuming user object has an id
+        serviced_by_username: user.username,
       };
-      const allEntries = getFromLocalStorage<StoredPmsScheduleEntry[]>(PMS_SCHEDULE_ENTRIES_KEY, []); // get fresh copy for update
-      allEntries.push(newScheduleEntry);
-      saveToLocalStorage(PMS_SCHEDULE_ENTRIES_KEY, allEntries);
+      await apiService.updatePmsScheduleEntry(selectedEntryForCompletion.id, updatedEntryData);
+      toast({ title: "Task Completed", description: `${selectedEntryForCompletion.task_name} for ${selectedEntryForCompletion.mhe_unit_code} marked as complete.` });
       
-      toast({title: "Next Task Scheduled", description: `Next ${completedTaskMaster.name} for ${selectedEntryForCompletion.mhe_unit_code} scheduled for ${format(nextDueDate, 'P')}.`});
+      const completedTaskMaster = taskMasters.find(tm => tm.id === selectedEntryForCompletion.pms_task_master_id);
+      if (completedTaskMaster && completedTaskMaster.frequency_unit !== 'operating_hours' && completedTaskMaster.is_active) {
+        let nextDueDate: Date;
+        const currentCompletionDate = parsedCompletionDate;
+        switch(completedTaskMaster.frequency_unit) {
+          case 'days': nextDueDate = addDays(currentCompletionDate, completedTaskMaster.frequency_value); break;
+          case 'weeks': nextDueDate = addWeeks(currentCompletionDate, completedTaskMaster.frequency_value); break;
+          case 'months': nextDueDate = addMonths(currentCompletionDate, completedTaskMaster.frequency_value); break;
+          default: nextDueDate = addDays(currentCompletionDate, 30); 
+        }
+        const newScheduleEntryData = {
+          mhe_unit_id: selectedEntryForCompletion.mhe_unit_id,
+          pms_task_master_id: selectedEntryForCompletion.pms_task_master_id,
+          due_date: format(nextDueDate, 'yyyy-MM-dd'), // Ensure API expects this format
+          status: 'Pending',
+        };
+        await apiService.addPmsScheduleEntry(newScheduleEntryData);
+        toast({title: "Next Task Scheduled", description: `Next ${completedTaskMaster.name} for ${selectedEntryForCompletion.mhe_unit_code} scheduled for ${format(nextDueDate, 'P')}.`});
+      }
+      fetchScheduleEntriesCallback(); 
+      setIsCompleteModalOpen(false);
+      setSelectedEntryForCompletion(null);
+      setCompletionNotes('');
+    } catch (error) {
+      toast({ title: "Error Completing Task", description: (error instanceof Error) ? error.message : "Could not update task.", variant: "destructive" });
     }
-    fetchScheduleEntriesCallback(); 
-    setIsCompleteModalOpen(false);
-    setSelectedEntryForCompletion(null);
-    setCompletionNotes('');
   };
 
   const handleOpenAddMasterTaskModal = () => {
@@ -378,33 +336,24 @@ export default function PmsSchedulePage() {
 
   const onSubmitMasterTask = async (data: PmsTaskMasterFormData) => {
     try {
-      const currentMasterTasks = getFromLocalStorage<StoredPmsTaskMaster[]>(PMS_TASK_MASTER_KEY, []);
+      const payload = { ...data, estimated_duration_minutes: data.estimated_duration_minutes || null };
       if (editingMasterTask) { // Editing existing task
-        const taskIndex = currentMasterTasks.findIndex(task => task.id === editingMasterTask.id);
-        if (taskIndex === -1) {
-            toast({ title: "Error Editing Task", description: "Master task not found.", variant: "destructive" });
-            return;
-        }
-        if (currentMasterTasks.some(task => task.name.toLowerCase() === data.name.toLowerCase() && task.id !== editingMasterTask.id)) {
+        if (taskMasters.some(task => task.name.toLowerCase() === data.name.toLowerCase() && task.id !== editingMasterTask.id)) {
             toast({ title: "Error Editing Task", description: "Another master task with this name already exists.", variant: "destructive" });
             return;
         }
-        currentMasterTasks[taskIndex] = { ...editingMasterTask, ...data, estimated_duration_minutes: data.estimated_duration_minutes || null };
+        await apiService.updatePmsTaskMaster(editingMasterTask.id, payload);
         toast({ title: "Success", description: "Master PMS Task updated." });
         setIsEditMasterTaskModalOpen(false);
-
       } else { // Adding new task
-        if (currentMasterTasks.some(task => task.name.toLowerCase() === data.name.toLowerCase())) {
+        if (taskMasters.some(task => task.name.toLowerCase() === data.name.toLowerCase())) {
             toast({ title: "Error Adding Task", description: "A master task with this name already exists.", variant: "destructive" });
             return;
         }
-        const newTaskMaster: StoredPmsTaskMaster = { id: uuidv4(), ...data, estimated_duration_minutes: data.estimated_duration_minutes || null };
-        currentMasterTasks.push(newTaskMaster);
+        await apiService.addPmsTaskMaster(payload);
         toast({ title: "Success", description: "Master PMS Task added." });
         setIsAddMasterTaskModalOpen(false);
       }
-      
-      saveToLocalStorage(PMS_TASK_MASTER_KEY, currentMasterTasks);
       fetchTaskMastersCallback(); 
       resetMasterTaskForm({is_active: true, frequency_unit: 'days', frequency_value:1, name: '', description: '', category: '', estimated_duration_minutes: undefined });
       setEditingMasterTask(null);
@@ -417,23 +366,19 @@ export default function PmsSchedulePage() {
     try {
       let formattedDueDate;
       try {
-        formattedDueDate = format(parseISO(data.due_date), 'yyyy-MM-dd');
+        formattedDueDate = format(parseISO(data.due_date), 'yyyy-MM-dd'); // Ensure API expects this format
       } catch {
         toast({ title: "Error Adding Schedule", description: "Invalid due date format.", variant: "destructive"});
         return;
       }
 
-      const newSchedule: StoredPmsScheduleEntry = { 
-        id: uuidv4(), 
+      const newScheduleData = { 
         ...data, 
         status: 'Pending',
         due_date: formattedDueDate
       };
-      const currentScheduleEntries = getFromLocalStorage<StoredPmsScheduleEntry[]>(PMS_SCHEDULE_ENTRIES_KEY, []);
-      currentScheduleEntries.push(newSchedule);
-      saveToLocalStorage(PMS_SCHEDULE_ENTRIES_KEY, currentScheduleEntries);
-      
-      toast({ title: "Success", description: "New PMS schedule entry added locally." });
+      await apiService.addPmsScheduleEntry(newScheduleData);
+      toast({ title: "Success", description: "New PMS schedule entry added." });
       fetchScheduleEntriesCallback(); 
       resetScheduleEntryForm({mhe_unit_id: '', pms_task_master_id: '', due_date: ''});
       setIsAddScheduleModalOpen(false);
@@ -447,30 +392,26 @@ export default function PmsSchedulePage() {
     setIsDeleteMasterTaskConfirmOpen(true);
   };
 
-  const handleConfirmDeleteMasterTask = () => {
+  const handleConfirmDeleteMasterTask = async () => {
     if (!masterTaskToDeleteId) return;
+    const taskToDelete = taskMasters.find(t => t.id === masterTaskToDeleteId);
     try {
-        let currentMasterTasks = getFromLocalStorage<StoredPmsTaskMaster[]>(PMS_TASK_MASTER_KEY, []);
-        const taskToDelete = currentMasterTasks.find(task => task.id === masterTaskToDeleteId);
-        
-        currentMasterTasks = currentMasterTasks.filter(task => task.id !== masterTaskToDeleteId);
-        saveToLocalStorage(PMS_TASK_MASTER_KEY, currentMasterTasks);
-        
+        await apiService.deletePmsTaskMaster(masterTaskToDeleteId);
         toast({ title: "Master Task Deleted", description: `Master task "${taskToDelete?.name}" deleted.`});
 
-        // Check if this task is used in any schedule entries
-        const currentScheduleEntries = getFromLocalStorage<StoredPmsScheduleEntry[]>(PMS_SCHEDULE_ENTRIES_KEY, []);
-        const isTaskInUse = currentScheduleEntries.some(entry => entry.pms_task_master_id === masterTaskToDeleteId);
+        // API should ideally handle cascading deletes or prevent deletion if in use.
+        // Client-side check is less reliable here.
+        const isTaskInUse = scheduleEntries.some(entry => entry.pms_task_master_id === masterTaskToDeleteId);
         if (isTaskInUse) {
             toast({
                 title: "Warning: Task In Use",
-                description: `The deleted master task "${taskToDelete?.name}" was used in some schedule entries. These entries might be affected and may require manual review or cleanup.`,
+                description: `The deleted master task "${taskToDelete?.name}" was used in some schedule entries. These entries might be affected.`,
                 variant: "default", 
                 duration: 7000
             });
         }
-
         fetchTaskMastersCallback();
+        fetchScheduleEntriesCallback(); // Refresh schedules as some might be orphaned or deleted by API
     } catch (error) {
         toast({ title: "Error Deleting Master Task", description: (error instanceof Error) ? error.message : "Could not delete master task.", variant: "destructive" });
     } finally {
@@ -503,7 +444,7 @@ export default function PmsSchedulePage() {
 
   const overallLoading = isLoading && (isDataLoading.mhe || isDataLoading.tasks || isDataLoading.schedules);
 
-  if (overallLoading && scheduleEntries.length === 0) { // Only show full page loader if no data is available yet
+  if (overallLoading && scheduleEntries.length === 0) {
     return (
       <div className="flex h-[calc(100vh-200px)] items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -512,7 +453,6 @@ export default function PmsSchedulePage() {
     );
   }
 
-  // Master Task Form Modal (used for both Add and Edit)
   const MasterTaskFormModal = ({ isOpen, onOpenChange, currentTask }: { isOpen: boolean, onOpenChange: (open: boolean) => void, currentTask: StoredPmsTaskMaster | null }) => (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -594,7 +534,7 @@ export default function PmsSchedulePage() {
             Preventive Maintenance Schedule
           </CardTitle>
           <CardDescription>
-            View, manage, and schedule maintenance tasks for MHE Units. Data is from local storage.
+            View, manage, and schedule maintenance tasks for MHE Units. Data is from API.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -649,9 +589,9 @@ export default function PmsSchedulePage() {
                 <Select 
                   value={filterMheId || ALL_MHES_SELECT_VALUE} 
                   onValueChange={(selectedValue) => setFilterMheId(selectedValue === ALL_MHES_SELECT_VALUE ? '' : selectedValue)}
-                  disabled={mheUnits.length === 0}
+                  disabled={mheUnits.length === 0 || isDataLoading.mhe}
                 >
-                    <SelectTrigger id="filterMhe"><SelectValue placeholder={mheUnits.length === 0 ? "No MHEs available" : "All MHEs"} /></SelectTrigger>
+                    <SelectTrigger id="filterMhe"><SelectValue placeholder={isDataLoading.mhe ? "Loading MHEs..." : (mheUnits.length === 0 ? "No MHEs available" : "All MHEs")} /></SelectTrigger>
                     <SelectContent>
                         <SelectItem value={ALL_MHES_SELECT_VALUE}>All MHEs</SelectItem>
                         {mheUnits.map(mhe => <SelectItem key={mhe.id} value={mhe.id}>{mhe.unit_code} - {mhe.name}</SelectItem>)}
@@ -687,7 +627,7 @@ export default function PmsSchedulePage() {
           <CardTitle className="text-xl">Scheduled Tasks</CardTitle>
           <Dialog open={isAddScheduleModalOpen} onOpenChange={setIsAddScheduleModalOpen}>
             <DialogTrigger asChild>
-              <Button variant="outline" onClick={() => { resetScheduleEntryForm({mhe_unit_id: '', pms_task_master_id: '', due_date: ''}); setIsAddScheduleModalOpen(true); }} disabled={mheUnits.length === 0 || taskMasters.filter(tm => tm.is_active).length === 0}>
+              <Button variant="outline" onClick={() => { resetScheduleEntryForm({mhe_unit_id: '', pms_task_master_id: '', due_date: ''}); setIsAddScheduleModalOpen(true); }} disabled={isDataLoading.mhe || isDataLoading.tasks || mheUnits.length === 0 || taskMasters.filter(tm => tm.is_active).length === 0}>
                   <PlusCircle className="mr-2 h-4 w-4"/> Add New Schedule
               </Button>
             </DialogTrigger>
@@ -753,14 +693,14 @@ export default function PmsSchedulePage() {
           </Dialog>
         </CardHeader>
         <CardContent>
-          {isDataLoading.schedules || isDataLoading.mhe || isDataLoading.tasks && displayedScheduleEntries.length === 0 ? (
-            <div className="flex justify-center items-center py-10"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
+          {isLoading || (isDataLoading.schedules || isDataLoading.mhe || isDataLoading.tasks) && displayedScheduleEntries.length === 0 ? (
+            <div className="flex justify-center items-center py-10"><Loader2 className="h-10 w-10 animate-spin text-primary" /> <span className="ml-2 text-muted-foreground">Loading schedule data...</span></div>
           ) : mheUnits.length === 0 ? (
             <p className="text-muted-foreground text-center py-6">No MHE units defined. Please add MHE units in Data Management first.</p>
           ) : taskMasters.filter(tm => tm.is_active).length === 0 ? (
             <p className="text-muted-foreground text-center py-6">No active Master PMS tasks defined. Please add master tasks below.</p>
           ) : displayedScheduleEntries.length === 0 ? (
-            <p className="text-muted-foreground text-center py-6">No PMS entries found matching criteria, or no MHE units/tasks configured.</p>
+            <p className="text-muted-foreground text-center py-6">No PMS entries found matching criteria.</p>
           ) : (
             <div className="overflow-x-auto">
             <Table>
@@ -813,13 +753,13 @@ export default function PmsSchedulePage() {
                 <CardTitle className="text-xl flex items-center"><Settings2 className="mr-2 h-5 w-5 text-primary"/>Manage Master PMS Tasks</CardTitle>
                 <CardDescription>Define standard preventive maintenance tasks and their frequencies.</CardDescription>
             </div>
-            <Button variant="outline" onClick={handleOpenAddMasterTaskModal}>
+            <Button variant="outline" onClick={handleOpenAddMasterTaskModal} disabled={isDataLoading.tasks}>
                 <PlusCircle className="mr-2 h-4 w-4"/> Add Master Task
             </Button>
         </CardHeader>
         <CardContent>
             {isDataLoading.tasks && taskMasters.length === 0 ? (
-                <div className="flex justify-center items-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+                <div className="flex justify-center items-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /> <span className="ml-2 text-muted-foreground">Loading master tasks...</span></div>
             ) : taskMasters.length === 0 ? (
                 <p className="text-muted-foreground text-center py-6">No Master PMS Tasks defined yet. Click "Add Master Task" to create one.</p>
             ) : (
@@ -882,7 +822,7 @@ export default function PmsSchedulePage() {
             <AlertDialogDescription>
               This action cannot be undone. This will permanently delete the master task
               "{taskMasters.find(t => t.id === masterTaskToDeleteId)?.name || ''}". 
-              Associated schedule entries might be affected and may need manual cleanup.
+              Associated schedule entries might be affected.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -930,4 +870,3 @@ export default function PmsSchedulePage() {
     </div>
   );
 }
-    

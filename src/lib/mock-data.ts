@@ -7,6 +7,9 @@ export interface ChecklistItem {
   question: string;
 }
 
+// This MOCK_CHECKLIST_ITEMS will be effectively unused if checklist items are fetched from API
+// It can be removed or kept for local development fallback if API is unavailable.
+// For this migration, it's assumed API is the source of truth, so this becomes less relevant.
 export const MOCK_CHECKLIST_ITEMS: ChecklistItem[] = [
   { id: '1', qr_code_data: 'TIRES_FRONT_LEFT', part_name: 'Front Left Tire', description: 'Inspect for wear, damage, and proper inflation.', question: 'Is the Front Left Tire in good condition?' },
   { id: '2', qr_code_data: 'TIRES_FRONT_RIGHT', part_name: 'Front Right Tire', description: 'Inspect for wear, damage, and proper inflation.', question: 'Is the Front Right Tire in good condition?' },
@@ -22,15 +25,13 @@ export const MOCK_CHECKLIST_ITEMS: ChecklistItem[] = [
 
 export interface InspectionRecordClientState {
   checklistItemId: string;
-  part_name: string; // For display convenience
-  question: string; // For display convenience
-  is_safe: boolean | null; // null if not yet inspected
-  photo_url: string | null; // User-provided or placeholder
+  part_name: string; 
+  question: string; 
+  is_safe: boolean | null; 
+  photo_url: string | null; 
   timestamp: string | null;
   completed: boolean;
-  remarks?: string | null; // New field for remarks on unsafe items
+  remarks?: string | null; 
 }
 
-// Placeholder for a 1x1 transparent PNG data URI
 export const PLACEHOLDER_IMAGE_DATA_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
-

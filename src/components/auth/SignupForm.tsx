@@ -6,19 +6,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { UserPlus, Eye, EyeOff, ShieldCheck, User as UserIcon } from 'lucide-react'; // Renamed User to UserIcon
+import { UserPlus, Eye, EyeOff, ShieldCheck, User as UserIcon } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { v4 as uuidv4 } from 'uuid';
-import type { User } from '@/context/AuthContext'; // Import User type
+import { useAuth } from '@/context/AuthContext';
+import type { User } from '@/context/AuthContext';
 
 type UserRole = 'operator' | 'supervisor';
-
-interface StoredUserAuthData extends User {
-  passwordHash: string; // In a real scenario, you'd store a hash, not plain text
-}
 
 export default function SignupForm() {
   const [username, setUsername] = useState('');
@@ -30,17 +26,7 @@ export default function SignupForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
   const router = useRouter();
-
-  const getStoredUsers = (): StoredUserAuthData[] => {
-    if (typeof window === 'undefined') return [];
-    const usersJson = localStorage.getItem('forkliftUsers');
-    return usersJson ? JSON.parse(usersJson) : [];
-  };
-
-  const saveStoredUsers = (users: StoredUserAuthData[]) => {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem('forkliftUsers', JSON.stringify(users));
-  };
+  const { signup } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -59,42 +45,13 @@ export default function SignupForm() {
 
     setIsSubmitting(true);
 
-    try {
-      const storedUsers = getStoredUsers();
-      if (storedUsers.find(u => u.username.toLowerCase() === username.toLowerCase())) {
-        toast({ title: "Sign Up Failed", description: "Username already exists.", variant: "destructive" });
-        setIsSubmitting(false);
-        return;
-      }
-
-      // Simulate password hashing for concept, in real app use bcrypt or similar
-      // For localStorage, we'll store it as is or a very simple "hash" for this temp purpose.
-      // Storing plain text passwords, even in localStorage, is not secure for production.
-      const newUser: StoredUserAuthData = {
-        id: uuidv4(),
-        username,
-        passwordHash: password, // Storing password directly for temporary local dev
-        role,
-      };
-
-      storedUsers.push(newUser);
-      saveStoredUsers(storedUsers);
-
-      toast({
-        title: "Sign Up Successful",
-        description: "Your account has been created locally. Please log in.",
-      });
-      router.push('/login');
-
-    } catch (error) {
-      toast({
-        title: "Sign Up Failed",
-        description: (error instanceof Error) ? error.message : "An unknown error occurred during local signup.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsSubmitting(false);
+    const success = await signup({ username, password, role });
+    if (success) {
+      // Navigation and success toast are handled by AuthContext's signup method
     }
+    // Error toasts are also handled by AuthContext's signup method
+    
+    setIsSubmitting(false);
   };
 
   return (
@@ -105,7 +62,7 @@ export default function SignupForm() {
             <UserPlus className="h-8 w-8 text-primary-foreground" />
           </div>
           <CardTitle className="font-headline text-3xl">Create Account</CardTitle>
-          <CardDescription>Join ForkLift Check (Local Mode)</CardDescription>
+          <CardDescription>Join ForkLift Check</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">

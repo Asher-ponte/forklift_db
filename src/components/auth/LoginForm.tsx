@@ -10,11 +10,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Truck, Eye, EyeOff } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import Link from 'next/link';
-import type { User } from '@/context/AuthContext'; // Import User type
-
-interface StoredUserAuthData extends User {
-  passwordHash: string;
-}
 
 export default function LoginForm() {
   const [username, setUsername] = useState('');
@@ -23,12 +18,6 @@ export default function LoginForm() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { login } = useAuth();
   const { toast } = useToast();
-
-  const getStoredUsers = (): StoredUserAuthData[] => {
-    if (typeof window === 'undefined') return [];
-    const usersJson = localStorage.getItem('forkliftUsers');
-    return usersJson ? JSON.parse(usersJson) : [];
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -41,32 +30,13 @@ export default function LoginForm() {
       return;
     }
     setIsSubmitting(true);
-
     try {
-      const storedUsers = getStoredUsers();
-      const foundUser = storedUsers.find(u => u.username.toLowerCase() === username.toLowerCase());
-
-      if (foundUser && foundUser.passwordHash === password) { // Direct password check for local dev
-        const userToLogin: User = {
-          id: foundUser.id,
-          username: foundUser.username,
-          role: foundUser.role,
-        };
-        await login(userToLogin);
-        // Success toast is handled by AuthContext
-      } else {
-        toast({
-          title: "Login Failed",
-          description: "Invalid username or password (local check).",
-          variant: "destructive",
-        });
-      }
+      await login({ username, password });
+      // Success toast and navigation are handled by AuthContext
     } catch (error) {
-      toast({
-        title: "Login Failed",
-        description: (error instanceof Error) ? error.message : "An unknown error occurred during local login.",
-        variant: "destructive",
-      });
+      // Error toast is handled by AuthContext's login method
+      // If specific client-side error handling is needed beyond what AuthContext provides:
+      // console.error("Login form submission error:", error); 
     } finally {
       setIsSubmitting(false);
     }
@@ -80,7 +50,7 @@ export default function LoginForm() {
             <Truck className="h-8 w-8 text-primary-foreground" />
           </div>
           <CardTitle className="font-headline text-3xl">ForkLift Check</CardTitle>
-          <CardDescription>Sign in to access your account (Local Mode)</CardDescription>
+          <CardDescription>Sign in to access your account</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-6">

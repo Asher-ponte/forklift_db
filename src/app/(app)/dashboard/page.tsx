@@ -16,32 +16,13 @@ import type { StoredInspectionReport, StoredDowntimeLog, Department, MheUnit } f
 import { useToast } from '@/hooks/use-toast';
 import { format, parseISO, startOfDay, endOfDay } from 'date-fns';
 import DowntimeOverviewChart from '@/components/dashboard/DowntimeOverviewChart';
-
+import * as apiService from '@/services/apiService';
 
 interface DashboardStats {
   totalInspectionsToday: number;
   safeForkliftsToday: number;
   unsafeForkliftsToday: number;
 }
-
-const REPORTS_STORAGE_KEY = 'forkliftInspectionReports';
-const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs';
-const DEPARTMENTS_KEY = 'forkliftDepartments';
-const MHE_UNITS_KEY = 'forkliftMheUnits';
-
-const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
-  if (typeof window === 'undefined') return defaultValue;
-  const item = localStorage.getItem(key);
-  if (item) {
-    try {
-      return JSON.parse(item) as T;
-    } catch (e) {
-      console.warn(`Error parsing localStorage item ${key}:`, e);
-      return defaultValue;
-    }
-  }
-  return defaultValue;
-};
 
 export default function DashboardPage() {
   const { user } = useAuth();
@@ -66,10 +47,17 @@ export default function DashboardPage() {
   const loadDashboardData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const fetchedReports = getFromLocalStorage<StoredInspectionReport[]>(REPORTS_STORAGE_KEY, []);
-      const fetchedDowntimeLogs = getFromLocalStorage<StoredDowntimeLog[]>(DOWNTIME_STORAGE_KEY, []);
-      const fetchedDepartments = getFromLocalStorage<Department[]>(DEPARTMENTS_KEY, []);
-      const fetchedMheUnits = getFromLocalStorage<MheUnit[]>(MHE_UNITS_KEY, []);
+      const [
+        fetchedReports, 
+        fetchedDowntimeLogs, 
+        fetchedDepartments, 
+        fetchedMheUnits
+      ] = await Promise.all([
+        apiService.fetchInspectionReports(),
+        apiService.fetchDowntimeLogs(),
+        apiService.fetchDepartments(),
+        apiService.fetchMheUnits()
+      ]);
       
       setAllReports(fetchedReports);
       setAllDowntimeLogs(fetchedDowntimeLogs);
@@ -111,15 +99,11 @@ export default function DashboardPage() {
         safeForkliftsToday: safeTodayCount,
         unsafeForkliftsToday: unsafeTodayCount,
       });
-      if (typeof window !== 'undefined') { 
-        // toast({ title: "Dashboard Loaded", description: "Data refreshed from local storage.", duration: 3000 });
-      }
+      toast({ title: "Dashboard Loaded", description: "Data refreshed from API.", duration: 3000 });
 
     } catch (error) {
-      console.error("Failed to load dashboard data from localStorage:", error);
-      if (typeof window !== 'undefined') {
-        toast({ title: "Dashboard Load Error", description: "Could not load data.", variant: "destructive" });
-      }
+      console.error("Failed to load dashboard data from API:", error);
+      toast({ title: "Dashboard Load Error", description: "Could not load data from API.", variant: "destructive" });
       setAllReports([]);
       setAllDowntimeLogs([]);
       setDepartments([]);
@@ -132,7 +116,7 @@ export default function DashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [toast, setIsLoading, setAllReports, setAllDowntimeLogs, setDepartments, setMheUnits, setStats]); 
+  }, [toast]); 
 
   useEffect(() => {
     loadDashboardData();
@@ -151,7 +135,7 @@ export default function DashboardPage() {
     setFilterStartDate('');
     setFilterEndDate('');
     setActiveFilters({ start: null, end: null });
-    toast({ title: "Filters Cleared", description: "Graphs showing default data (today for uninspected, all for trends/downtime unless specified by component).", duration: 4000});
+    toast({ title: "Filters Cleared", description: "Graphs showing default data.", duration: 4000});
   };
 
   const filteredReportsForCharts = useMemo(() => {
@@ -195,7 +179,7 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center">
         <div>
           <h1 className="text-3xl font-headline font-bold">Welcome, {user?.username}!</h1>
-          <p className="text-muted-foreground">Here's an overview of your forklift operations (Local Mode).</p>
+          <p className="text-muted-foreground">Here's an overview of your forklift operations.</p>
         </div>
         <Button onClick={loadDashboardData} variant="outline" size="sm" className="mt-2 sm:mt-0" disabled={isLoading}>
           <RotateCcw className="mr-2 h-4 w-4" /> {isLoading ? "Refreshing..." : "Refresh Data"}
@@ -249,7 +233,7 @@ export default function DashboardPage() {
                             key={dept.id}
                             department={dept}
                             mheUnitsInDept={mheUnits.filter(mhe => mhe.department_id === dept.id && mhe.status !== 'inactive')}
-                            reports={allReports} // Pass all reports, component will filter for today and dept
+                            reports={allReports} 
                             isLoading={isLoading}
                         />
                     ))}
@@ -322,7 +306,7 @@ export default function DashboardPage() {
              <BarChartHorizontalBig className="mr-2 h-6 w-6 text-primary" />
              Unit History
           </CardTitle>
-          <CardDescription>Enter a Unit ID to view its inspection history from local storage.</CardDescription>
+          <CardDescription>Enter a Unit ID to view its inspection history from the API.</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="mb-4">
@@ -342,7 +326,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
-    
-
-    

@@ -20,40 +20,8 @@ import { z } from 'zod';
 import { PlusCircle, ListChecks, TruckIcon, Building, AlertTriangle, Loader2, Edit, Trash2 } from "lucide-react";
 import { useToast } from '@/hooks/use-toast';
 import { Switch } from '@/components/ui/switch';
-import { v4 as uuidv4 } from 'uuid';
-
-// --- LocalStorage Keys ---
-const DEPARTMENTS_KEY = 'forkliftDepartments';
-const MHE_UNITS_KEY = 'forkliftMheUnits';
-const CHECKLIST_ITEMS_KEY = 'forkliftChecklistMasterItems';
-const REPORTS_STORAGE_KEY = 'forkliftInspectionReports'; // For checking dependencies
-const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs'; // For checking dependencies
-const PMS_SCHEDULE_ENTRIES_KEY = 'forkliftPmsScheduleEntries'; // For checking MHE unit dependencies
-
-// --- Helper functions for localStorage ---
-const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
-  if (typeof window === 'undefined') return defaultValue;
-  const item = localStorage.getItem(key);
-  if (item) {
-    try {
-      return JSON.parse(item) as T;
-    } catch (e) {
-      console.warn(`Error parsing localStorage item ${key}:`, e);
-      return defaultValue;
-    }
-  }
-  return defaultValue;
-};
-
-const saveToLocalStorage = <T>(key: string, value: T): void => {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.error(`Error saving to localStorage item ${key}:`, e);
-  }
-};
-
+import * as apiService from '@/services/apiService';
+import type { StoredInspectionReport, StoredDowntimeLog, StoredPmsScheduleEntry } from '@/lib/types';
 
 // --- Data Types ---
 interface Department {
@@ -153,10 +121,10 @@ export default function DataManagementPage() {
   const fetchDepartments = useCallback(async () => {
     setIsLoadingDepartments(true);
     try {
-      const storedDepartments = getFromLocalStorage<Department[]>(DEPARTMENTS_KEY, []);
-      setDepartments(storedDepartments);
+      const fetchedDepartments = await apiService.fetchDepartments();
+      setDepartments(fetchedDepartments);
     } catch (error) {
-      toast({ title: "Error Fetching Departments", description: "Could not load departments.", variant: "destructive" });
+      toast({ title: "Error Fetching Departments", description: (error instanceof Error) ? error.message : "Could not load departments.", variant: "destructive" });
       setDepartments([]);
     } finally {
       setIsLoadingDepartments(false);
@@ -166,29 +134,34 @@ export default function DataManagementPage() {
   const fetchMheUnits = useCallback(async () => {
     setIsLoadingMheUnits(true);
     try {
-      const storedMheUnits = getFromLocalStorage<MheUnit[]>(MHE_UNITS_KEY, []);
-      const currentDepartments = getFromLocalStorage<Department[]>(DEPARTMENTS_KEY, []);
+      const [fetchedMheUnits, currentDepartments] = await Promise.all([
+        apiService.fetchMheUnits(),
+        departments.length > 0 ? departments : apiService.fetchDepartments() // Fetch departments if not already loaded
+      ]);
       
-      const enhancedData = storedMheUnits.map(mhe => ({
+      const enhancedData = fetchedMheUnits.map(mhe => ({
         ...mhe,
         department_name: currentDepartments.find(d => d.id === mhe.department_id)?.name || 'N/A'
       }));
       setMheUnits(enhancedData);
+      if(departments.length === 0 && currentDepartments.length > 0) {
+        setDepartments(currentDepartments); // Cache if fetched now
+      }
     } catch (error) {
-      toast({ title: "Error Fetching MHE Units", description: "Could not load MHE units.", variant: "destructive" });
+      toast({ title: "Error Fetching MHE Units", description: (error instanceof Error) ? error.message : "Could not load MHE units.", variant: "destructive" });
       setMheUnits([]);
     } finally {
       setIsLoadingMheUnits(false);
     }
-  }, [toast]);
+  }, [toast, departments]);
 
   const fetchChecklistItems = useCallback(async () => {
     setIsLoadingChecklistItems(true);
     try {
-      const storedChecklistItems = getFromLocalStorage<ChecklistItemMasterItem[]>(CHECKLIST_ITEMS_KEY, []);
-      setChecklistItems(storedChecklistItems);
+      const fetchedChecklistItems = await apiService.fetchChecklistItems();
+      setChecklistItems(fetchedChecklistItems);
     } catch (error) {
-      toast({ title: "Error Fetching Checklist Items", description: "Could not load checklist items.", variant: "destructive" });
+      toast({ title: "Error Fetching Checklist Items", description: (error instanceof Error) ? error.message : "Could not load checklist items.", variant: "destructive" });
       setChecklistItems([]);
     } finally {
       setIsLoadingChecklistItems(false);
@@ -267,24 +240,21 @@ export default function DataManagementPage() {
   // --- Form Submission Handlers ---
   const onDepartmentSubmit = async (data: DepartmentFormData) => {
     try {
-      let currentDepartments = getFromLocalStorage<Department[]>(DEPARTMENTS_KEY, []);
       if (editingDepartment) { // Edit
-        if (currentDepartments.some(dept => dept.name.toLowerCase() === data.name.toLowerCase() && dept.id !== editingDepartment.id)) {
+        if (departments.some(dept => dept.name.toLowerCase() === data.name.toLowerCase() && dept.id !== editingDepartment.id)) {
           toast({ title: "Error Editing Department", description: "Department name already exists.", variant: "destructive" }); return;
         }
-        currentDepartments = currentDepartments.map(dept => dept.id === editingDepartment.id ? { ...editingDepartment, ...data } : dept);
-        toast({ title: "Success", description: "Department updated locally." });
+        await apiService.updateDepartment(editingDepartment.id, data);
+        toast({ title: "Success", description: "Department updated." });
       } else { // Add
-        if (currentDepartments.some(dept => dept.name.toLowerCase() === data.name.toLowerCase())) {
+        if (departments.some(dept => dept.name.toLowerCase() === data.name.toLowerCase())) {
           toast({ title: "Error Adding Department", description: "Department name already exists.", variant: "destructive" }); return;
         }
-        const newDepartment: Department = { id: uuidv4(), ...data };
-        currentDepartments.push(newDepartment);
-        toast({ title: "Success", description: "Department added locally." });
+        await apiService.addDepartment(data);
+        toast({ title: "Success", description: "Department added." });
       }
-      saveToLocalStorage(DEPARTMENTS_KEY, currentDepartments);
       fetchDepartments(); 
-      fetchMheUnits(); // MHE units might depend on department name changes
+      fetchMheUnits(); 
       setIsDeptModalOpen(false);
       setEditingDepartment(null);
     } catch (error) {
@@ -294,22 +264,20 @@ export default function DataManagementPage() {
 
   const onMheUnitSubmit = async (data: MheUnitFormData) => {
     try {
-      let currentMheUnits = getFromLocalStorage<MheUnit[]>(MHE_UNITS_KEY, []);
+      const payload = { ...data, department_id: data.department_id === NONE_SELECT_VALUE ? null : data.department_id };
       if (editingMheUnit) { // Edit
-        if (currentMheUnits.some(mhe => mhe.unit_code.toLowerCase() === data.unit_code.toLowerCase() && mhe.id !== editingMheUnit.id)) {
+        if (mheUnits.some(mhe => mhe.unit_code.toLowerCase() === data.unit_code.toLowerCase() && mhe.id !== editingMheUnit.id)) {
           toast({ title: "Error Editing MHE Unit", description: "MHE Unit Code already exists.", variant: "destructive" }); return;
         }
-        currentMheUnits = currentMheUnits.map(mhe => mhe.id === editingMheUnit.id ? { ...editingMheUnit, ...data, department_id: data.department_id === NONE_SELECT_VALUE ? null : data.department_id } : mhe);
-        toast({ title: "Success", description: "MHE unit updated locally." });
+        await apiService.updateMheUnit(editingMheUnit.id, payload);
+        toast({ title: "Success", description: "MHE unit updated." });
       } else { // Add
-        if (currentMheUnits.some(mhe => mhe.unit_code.toLowerCase() === data.unit_code.toLowerCase())) {
+        if (mheUnits.some(mhe => mhe.unit_code.toLowerCase() === data.unit_code.toLowerCase())) {
           toast({ title: "Error Adding MHE Unit", description: "MHE Unit Code already exists.", variant: "destructive" }); return;
         }
-        const newMheUnit: MheUnit = { id: uuidv4(), ...data, department_id: data.department_id === NONE_SELECT_VALUE ? null : data.department_id };
-        currentMheUnits.push(newMheUnit);
-        toast({ title: "Success", description: "MHE unit added locally." });
+        await apiService.addMheUnit(payload);
+        toast({ title: "Success", description: "MHE unit added." });
       }
-      saveToLocalStorage(MHE_UNITS_KEY, currentMheUnits);
       fetchMheUnits(); 
       setIsMheModalOpen(false);
       setEditingMheUnit(null);
@@ -320,22 +288,19 @@ export default function DataManagementPage() {
 
   const onChecklistItemSubmit = async (data: ChecklistItemFormData) => {
     try {
-      let currentItems = getFromLocalStorage<ChecklistItemMasterItem[]>(CHECKLIST_ITEMS_KEY, []);
       if (editingChecklistItem) { // Edit
-         if (currentItems.some(item => item.part_name.toLowerCase() === data.part_name.toLowerCase() && item.id !== editingChecklistItem.id)) {
+         if (checklistItems.some(item => item.part_name.toLowerCase() === data.part_name.toLowerCase() && item.id !== editingChecklistItem.id)) {
            toast({ title: "Error Editing Item", description: "Another item with this part name already exists.", variant: "destructive" }); return;
          }
-        currentItems = currentItems.map(item => item.id === editingChecklistItem.id ? { ...editingChecklistItem, ...data } : item);
-        toast({ title: "Success", description: "Checklist item updated locally." });
+        await apiService.updateChecklistItem(editingChecklistItem.id, data);
+        toast({ title: "Success", description: "Checklist item updated." });
       } else { // Add
-        if (currentItems.some(item => item.part_name.toLowerCase() === data.part_name.toLowerCase())) {
+        if (checklistItems.some(item => item.part_name.toLowerCase() === data.part_name.toLowerCase())) {
            toast({ title: "Error Adding Item", description: "An item with this part name already exists.", variant: "destructive" }); return;
         }
-        const newItem: ChecklistMasterItem = { id: uuidv4(), ...data };
-        currentItems.push(newItem);
-        toast({ title: "Success", description: "Checklist item added locally." });
+        await apiService.addChecklistItem(data);
+        toast({ title: "Success", description: "Checklist item added." });
       }
-      saveToLocalStorage(CHECKLIST_ITEMS_KEY, currentItems);
       fetchChecklistItems();
       setIsItemModalOpen(false);
       setEditingChecklistItem(null);
@@ -345,82 +310,93 @@ export default function DataManagementPage() {
   };
 
   // --- Delete Handlers ---
-  const handleConfirmDeleteDepartment = () => {
+  const handleConfirmDeleteDepartment = async () => {
     if (!departmentToDeleteId) return;
-    let currentDepartments = getFromLocalStorage<Department[]>(DEPARTMENTS_KEY, []);
-    const deptToDelete = currentDepartments.find(d => d.id === departmentToDeleteId);
-    currentDepartments = currentDepartments.filter(d => d.id !== departmentToDeleteId);
-    saveToLocalStorage(DEPARTMENTS_KEY, currentDepartments);
-    toast({ title: "Department Deleted", description: `Department "${deptToDelete?.name}" removed.` });
-    
-    const mheUnitsUsingDept = getFromLocalStorage<MheUnit[]>(MHE_UNITS_KEY, []).filter(mhe => mhe.department_id === departmentToDeleteId);
-    if (mheUnitsUsingDept.length > 0) {
-        toast({ title: "Warning", description: `${mheUnitsUsingDept.length} MHE unit(s) were assigned to the deleted department. Their department assignment needs review.`, duration: 5000, variant: "default" });
+    const deptToDelete = departments.find(d => d.id === departmentToDeleteId);
+    try {
+      await apiService.deleteDepartment(departmentToDeleteId);
+      toast({ title: "Department Deleted", description: `Department "${deptToDelete?.name}" removed.` });
+      
+      const mheUnitsUsingDept = mheUnits.filter(mhe => mhe.department_id === departmentToDeleteId);
+      if (mheUnitsUsingDept.length > 0) {
+          toast({ title: "Warning", description: `${mheUnitsUsingDept.length} MHE unit(s) were assigned to the deleted department. Their department assignment needs review.`, duration: 5000, variant: "default" });
+      }
+      fetchDepartments();
+      fetchMheUnits();
+    } catch (error) {
+      toast({ title: "Error Deleting Department", description: (error instanceof Error) ? error.message : "Operation failed.", variant: "destructive" });
+    } finally {
+      setIsDeleteDeptConfirmOpen(false);
+      setDepartmentToDeleteId(null);
     }
-
-    fetchDepartments();
-    fetchMheUnits(); // Refresh MHE units as their display name might change
-    setIsDeleteDeptConfirmOpen(false);
-    setDepartmentToDeleteId(null);
   };
 
-  const handleConfirmDeleteMheUnit = () => {
+  const handleConfirmDeleteMheUnit = async () => {
     if (!mheUnitToDeleteId) return;
-    let currentMheUnits = getFromLocalStorage<MheUnit[]>(MHE_UNITS_KEY, []);
-    const mheToDelete = currentMheUnits.find(mhe => mhe.id === mheUnitToDeleteId);
-    currentMheUnits = currentMheUnits.filter(mhe => mhe.id !== mheUnitToDeleteId);
-    saveToLocalStorage(MHE_UNITS_KEY, currentMheUnits);
-    toast({ title: "MHE Unit Deleted", description: `MHE Unit "${mheToDelete?.unit_code}" removed.` });
+    const mheToDelete = mheUnits.find(mhe => mhe.id === mheUnitToDeleteId);
+    try {
+      await apiService.deleteMheUnit(mheUnitToDeleteId);
+      toast({ title: "MHE Unit Deleted", description: `MHE Unit "${mheToDelete?.unit_code}" removed.` });
 
-    // Check for dependencies in reports, downtime logs, pms schedules (using unit_code for reports/downtime, id for pms)
-    const reports = getFromLocalStorage<any[]>(REPORTS_STORAGE_KEY, []);
-    const downtimeLogs = getFromLocalStorage<any[]>(DOWNTIME_STORAGE_KEY, []);
-    const pmsSchedules = getFromLocalStorage<any[]>(PMS_SCHEDULE_ENTRIES_KEY, []);
-    let warningMessage = "";
-    if (reports.some(r => r.unitId === mheToDelete?.unit_code)) warningMessage += "Inspection reports, ";
-    if (downtimeLogs.some(dl => dl.unitId === mheToDelete?.unit_code)) warningMessage += "downtime logs, ";
-    if (pmsSchedules.some(pms => pms.mhe_unit_id === mheToDelete?.id)) warningMessage += "PMS schedules, ";
-    
-    if (warningMessage) {
-      warningMessage = warningMessage.slice(0, -2); // Remove trailing comma and space
-      toast({
-        title: "Warning: MHE Unit In Use",
-        description: `The deleted MHE Unit "${mheToDelete?.unit_code}" was referenced in ${warningMessage}. These records may now be orphaned.`,
-        variant: "default",
-        duration: 7000
-      });
-    }
+      // Note: API should ideally handle or report on dependencies.
+      // The client-side checks for reports/downtime/pms are more complex with an API.
+      // For this migration, we'll rely on API constraints or accept potential orphaned records.
+      // If API returns a specific error for dependencies, that could be handled here.
+      // Simple check for demonstration:
+      const reports: StoredInspectionReport[] = await apiService.fetchInspectionReportsByUnitId(mheToDelete?.unit_code || '');
+      const downtimeLogs: StoredDowntimeLog[] = (await apiService.fetchDowntimeLogs()).filter(dl => dl.unitId === mheToDelete?.unit_code);
+      const pmsSchedules: StoredPmsScheduleEntry[] = (await apiService.fetchPmsScheduleEntries()).filter(pms => pms.mhe_unit_id === mheToDelete?.id);
 
-    fetchMheUnits();
-    setIsDeleteMheConfirmOpen(false);
-    setMheUnitToDeleteId(null);
-  };
-
-  const handleConfirmDeleteChecklistItem = () => {
-    if (!checklistItemToDeleteId) return;
-    let currentItems = getFromLocalStorage<ChecklistItemMasterItem[]>(CHECKLIST_ITEMS_KEY, []);
-    const itemToDelete = currentItems.find(item => item.id === checklistItemToDeleteId);
-    currentItems = currentItems.filter(item => item.id !== checklistItemToDeleteId);
-    saveToLocalStorage(CHECKLIST_ITEMS_KEY, currentItems);
-    toast({ title: "Checklist Item Deleted", description: `Checklist item "${itemToDelete?.part_name}" removed.` });
-    
-    // Check if used in existing reports (by checklistItemId)
-    const reports = getFromLocalStorage<any[]>(REPORTS_STORAGE_KEY, []);
-    const isItemInReports = reports.some(report => report.items?.some((repItem: any) => repItem.checklistItemId === checklistItemToDeleteId));
-    if (isItemInReports) {
+      let warningMessage = "";
+      if (reports.length > 0) warningMessage += "Inspection reports, ";
+      if (downtimeLogs.length > 0) warningMessage += "downtime logs, ";
+      if (pmsSchedules.length > 0) warningMessage += "PMS schedules, ";
+      
+      if (warningMessage) {
+        warningMessage = warningMessage.slice(0, -2);
         toast({
-            title: "Warning: Item In Use",
-            description: `The deleted checklist item "${itemToDelete?.part_name}" was used in historical inspection reports. These reports will retain the data.`,
-            variant: "default",
-            duration: 7000
+          title: "Warning: MHE Unit In Use",
+          description: `The deleted MHE Unit "${mheToDelete?.unit_code}" may be referenced in ${warningMessage}. These records might need review.`,
+          variant: "default",
+          duration: 7000
         });
+      }
+      fetchMheUnits();
+    } catch (error) {
+      toast({ title: "Error Deleting MHE Unit", description: (error instanceof Error) ? error.message : "Operation failed.", variant: "destructive" });
+    } finally {
+      setIsDeleteMheConfirmOpen(false);
+      setMheUnitToDeleteId(null);
     }
-
-    fetchChecklistItems();
-    setIsDeleteItemConfirmOpen(false);
-    setChecklistItemToDeleteId(null);
   };
 
+  const handleConfirmDeleteChecklistItem = async () => {
+    if (!checklistItemToDeleteId) return;
+    const itemToDelete = checklistItems.find(item => item.id === checklistItemToDeleteId);
+    try {
+      await apiService.deleteChecklistItem(checklistItemToDeleteId);
+      toast({ title: "Checklist Item Deleted", description: `Checklist item "${itemToDelete?.part_name}" removed.` });
+      
+      // Similar to MHE, a full dependency check on reports via API is complex.
+      // We'll rely on API or inform the user.
+      // const reports = await apiService.fetchInspectionReports(); // This could be a lot of data
+      // const isItemInReports = reports.some(report => report.items?.some((repItem: any) => repItem.checklistItemId === checklistItemToDeleteId));
+      // if (isItemInReports) { ... } 
+      toast({
+          title: "Note",
+          description: `If checklist item "${itemToDelete?.part_name}" was used in historical reports, those reports will retain the data.`,
+          variant: "default",
+          duration: 5000
+      });
+
+      fetchChecklistItems();
+    } catch (error) {
+      toast({ title: "Error Deleting Checklist Item", description: (error instanceof Error) ? error.message : "Operation failed.", variant: "destructive" });
+    } finally {
+      setIsDeleteItemConfirmOpen(false);
+      setChecklistItemToDeleteId(null);
+    }
+  };
 
   if (authLoading) {
     return <div className="flex h-[calc(100vh-200px)] items-center justify-center"><Loader2 className="h-12 w-12 animate-spin text-primary" /><p className="ml-3 text-muted-foreground">Loading...</p></div>;
@@ -695,7 +671,7 @@ export default function DataManagementPage() {
                 <AlertDialogTitle>Confirm Delete MHE Unit</AlertDialogTitle>
                 <AlertDialogDescription>
                     Are you sure you want to delete MHE unit "{mheUnits.find(m=>m.id === mheUnitToDeleteId)?.unit_code || ''}"? 
-                    This action cannot be undone. Associated inspection reports, downtime logs, and PMS schedules may be orphaned.
+                    This action cannot be undone. Associated inspection reports, downtime logs, and PMS schedules may be orphaned if not handled by the API.
                 </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
@@ -724,4 +700,3 @@ export default function DataManagementPage() {
     </div>
   );
 }
-
