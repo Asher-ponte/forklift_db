@@ -6,8 +6,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileText, Download, Filter, RefreshCw, CheckCircle, AlertCircle, ImageOff, MessageSquare } from "lucide-react";
+import { FileText, Download, Filter, RefreshCw, CheckCircle, AlertCircle, ImageOff, MessageSquare, ExternalLink } from "lucide-react";
 import Image from 'next/image';
+import Link from 'next/link'; // Import NextLink for internal navigation if needed, use <a> for external
 import { useState, useMemo, useEffect, useCallback } from "react";
 import type { StoredInspectionReport } from '@/lib/types';
 import type { InspectionRecordClientState } from '@/lib/mock-data';
@@ -61,17 +62,17 @@ export default function ReportPage() {
       let representativePhoto = PLACEHOLDER_IMAGE_DATA_URL;
       let hint = 'forklift general';
       if (report.status === 'Unsafe') {
-        const unsafeItemWithPhoto = report.items?.find(item => !item.is_safe && item.photo_url);
+        const unsafeItemWithPhoto = report.items?.find(item => !item.is_safe && item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL);
         if (unsafeItemWithPhoto) {
           representativePhoto = unsafeItemWithPhoto.photo_url!;
           hint = unsafeItemWithPhoto.part_name;
         } else {
-           const firstItemWithPhoto = report.items?.find(item => item.photo_url);
+           const firstItemWithPhoto = report.items?.find(item => item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL);
            if(firstItemWithPhoto) representativePhoto = firstItemWithPhoto.photo_url!;
            hint = "issue";
         }
       } else {
-        const firstItemWithPhoto = report.items?.find(item => item.photo_url);
+        const firstItemWithPhoto = report.items?.find(item => item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL);
         if(firstItemWithPhoto) {
           representativePhoto = firstItemWithPhoto.photo_url!;
           hint = firstItemWithPhoto.part_name;
@@ -186,6 +187,9 @@ export default function ReportPage() {
     }
   };
 
+  const isClickablePhoto = (url: string | null | undefined) => url && url !== PLACEHOLDER_IMAGE_DATA_URL && !url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP");
+
+
   return (
     <div className="space-y-8">
       <Card className="shadow-lg">
@@ -289,15 +293,30 @@ export default function ReportPage() {
                     </div>
                     <div className="w-full md:w-[15%] flex items-center md:justify-center">
                        <span className="md:hidden font-semibold text-xs text-muted-foreground mr-2">Rep. Photo: </span>
-                      <Image
-                        src={report.representativePhotoUrl || PLACEHOLDER_IMAGE_DATA_URL}
-                        alt={`Inspection for ${report.unitId}`}
-                        width={60}
-                        height={45}
-                        className="rounded-md object-cover"
-                        data-ai-hint={report.representativeDataAiHint}
-                        onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
-                      />
+                       {isClickablePhoto(report.representativePhotoUrl) ? (
+                          <a href={report.representativePhotoUrl} target="_blank" rel="noopener noreferrer" className="relative group">
+                            <Image
+                              src={report.representativePhotoUrl}
+                              alt={`Inspection for ${report.unitId}`}
+                              width={60}
+                              height={45}
+                              className="rounded-md object-cover group-hover:opacity-80 transition-opacity"
+                              data-ai-hint={report.representativeDataAiHint}
+                              onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
+                            />
+                             <ExternalLink className="absolute top-1 right-1 h-3 w-3 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-sm p-0.5" />
+                          </a>
+                        ) : (
+                          <Image
+                            src={report.representativePhotoUrl || PLACEHOLDER_IMAGE_DATA_URL}
+                            alt={`Inspection for ${report.unitId}`}
+                            width={60}
+                            height={45}
+                            className="rounded-md object-cover"
+                            data-ai-hint={report.representativeDataAiHint}
+                            onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
+                          />
+                        )}
                     </div>
                   </div>
                 </AccordionTrigger>
@@ -339,19 +358,34 @@ export default function ReportPage() {
                                   )}
                                 </TableCell>
                                 <TableCell className="text-center">
-                                  {item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL && !item.photo_url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP") ? (
-                                    <Image
-                                      src={item.photo_url}
-                                      alt={item.part_name}
-                                      width={80}
-                                      height={60}
-                                      className="rounded-md object-cover mx-auto"
-                                      data-ai-hint={item.part_name.toLowerCase()}
-                                      onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
-                                    />
+                                  {isClickablePhoto(item.photo_url) ? (
+                                    <a href={item.photo_url!} target="_blank" rel="noopener noreferrer" className="relative group inline-block">
+                                      <Image
+                                        src={item.photo_url!}
+                                        alt={item.part_name}
+                                        width={80}
+                                        height={60}
+                                        className="rounded-md object-cover mx-auto group-hover:opacity-80 transition-opacity"
+                                        data-ai-hint={item.part_name.toLowerCase()}
+                                        onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
+                                      />
+                                      <ExternalLink className="absolute top-1 right-1 h-4 w-4 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-sm p-0.5" />
+                                    </a>
                                   ) : (
                                     <div className="flex items-center justify-center text-muted-foreground text-xs">
-                                      <ImageOff className="mr-1 h-4 w-4"/> No Photo
+                                      { item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL && !item.photo_url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP") ? (
+                                        <Image
+                                          src={item.photo_url}
+                                          alt={item.part_name}
+                                          width={80}
+                                          height={60}
+                                          className="rounded-md object-cover mx-auto"
+                                          data-ai-hint={item.part_name.toLowerCase()}
+                                          onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
+                                        />
+                                      ) : (
+                                        <><ImageOff className="mr-1 h-4 w-4"/> No Photo</>
+                                      )}
                                     </div>
                                   )}
                                 </TableCell>
@@ -387,3 +421,5 @@ export default function ReportPage() {
     </div>
   );
 }
+
+    

@@ -10,10 +10,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { RefreshCw, ListChecks, CheckSquare, Edit, Eye } from 'lucide-react';
+import { RefreshCw, ListChecks, CheckSquare, Edit, Eye, ExternalLink, ImageOff } from 'lucide-react';
 import type { StoredDowntimeLog, DowntimeUnsafeItem } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
+import Link from 'next/link'; // Import NextLink for internal navigation if needed, use <a> for external
 import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
 
 const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs';
@@ -159,6 +160,8 @@ export default function DowntimePage() {
     setIsDetailsModalOpen(true);
   };
 
+  const isClickablePhoto = (url: string | null | undefined) => url && url !== PLACEHOLDER_IMAGE_DATA_URL && !url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP");
+
   return (
     <div className="space-y-8">
       <DowntimeForm onLogAdded={loadDowntimeLogs} />
@@ -287,15 +290,36 @@ export default function DowntimePage() {
                       <TableCell className="font-medium">{item.part_name}</TableCell>
                       <TableCell>{item.remarks || <span className="text-xs text-muted-foreground italic">No remarks</span>}</TableCell>
                       <TableCell className="text-center">
-                        <Image
-                          src={item.photo_url || PLACEHOLDER_IMAGE_DATA_URL}
-                          alt={item.part_name || 'Unsafe item image'}
-                          width={100}
-                          height={75}
-                          className="rounded-md object-cover mx-auto"
-                          data-ai-hint={item.part_name ? item.part_name.toLowerCase().split(' ').slice(0,2).join(' ') : "defect detail"}
-                          onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
-                        />
+                        {isClickablePhoto(item.photo_url) ? (
+                          <a href={item.photo_url!} target="_blank" rel="noopener noreferrer" className="relative group inline-block">
+                            <Image
+                              src={item.photo_url!}
+                              alt={item.part_name || 'Unsafe item image'}
+                              width={100}
+                              height={75}
+                              className="rounded-md object-cover mx-auto group-hover:opacity-80 transition-opacity"
+                              data-ai-hint={item.part_name ? item.part_name.toLowerCase().split(' ').slice(0,2).join(' ') : "defect detail"}
+                              onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
+                            />
+                            <ExternalLink className="absolute top-1 right-1 h-4 w-4 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-sm p-0.5" />
+                          </a>
+                        ) : (
+                           <div className="flex items-center justify-center text-muted-foreground text-xs">
+                              { item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL && !item.photo_url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP") ? (
+                                <Image
+                                  src={item.photo_url}
+                                  alt={item.part_name || 'Unsafe item image'}
+                                  width={100}
+                                  height={75}
+                                  className="rounded-md object-cover mx-auto"
+                                  data-ai-hint={item.part_name ? item.part_name.toLowerCase().split(' ').slice(0,2).join(' ') : "defect detail"}
+                                  onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
+                                />
+                              ) : (
+                                <><ImageOff className="mr-1 h-4 w-4"/> No Photo</>
+                              )}
+                            </div>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -317,3 +341,4 @@ export default function DowntimePage() {
   );
 }
 
+    
