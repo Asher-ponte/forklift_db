@@ -6,13 +6,13 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileText, Download, Filter, RefreshCw, CheckCircle, AlertCircle, ImageOff, MessageSquare, ExternalLink, Trash2, Edit } from "lucide-react";
+import { FileText, Download, Filter, RefreshCw, CheckCircle, AlertCircle, ImageOff, MessageSquare, ZoomIn, Trash2, Edit } from "lucide-react";
 import Image from 'next/image';
-import Link from 'next/link';
 import { useState, useMemo, useEffect, useCallback } from "react";
-import type { StoredInspectionReport, StoredDowntimeLog } from '@/lib/types';
+import type { StoredInspectionReport } from '@/lib/types';
 import type { InspectionRecordClientState } from '@/lib/mock-data';
 import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
+import ImageModal from '@/components/shared/ImageModal'; // Import the new modal
 import {
   Accordion,
   AccordionContent,
@@ -79,6 +79,17 @@ export default function ReportPage() {
   const { toast } = useToast();
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [reportToDeleteId, setReportToDeleteId] = useState<string | null>(null);
+
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+  const [selectedImageAlt, setSelectedImageAlt] = useState<string>("Enlarged view");
+
+
+  const openImageModal = (url: string, alt: string) => {
+    setSelectedImageUrl(url);
+    setSelectedImageAlt(alt);
+    setIsImageModalOpen(true);
+  };
 
   const processReportsToDisplayEntries = (reportsFromStorage: StoredInspectionReport[]): ReportDisplayEntry[] => {
     return reportsFromStorage.map(report => {
@@ -210,7 +221,9 @@ export default function ReportPage() {
     }
   };
 
-  const isClickablePhoto = (url: string | null | undefined) => url && url !== PLACEHOLDER_IMAGE_DATA_URL && !url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP");
+  const isClickablePhoto = (url: string | null | undefined): url is string => {
+    return !!(url && url !== PLACEHOLDER_IMAGE_DATA_URL && !url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP"));
+  }
 
   const handleOpenDeleteDialog = (id: string) => {
     setReportToDeleteId(id);
@@ -221,13 +234,11 @@ export default function ReportPage() {
     if (!reportToDeleteId) return;
 
     try {
-      // Delete the inspection report
       const currentReports = getFromLocalStorage<StoredInspectionReport[]>(REPORTS_STORAGE_KEY, []);
       const updatedReports = currentReports.filter(report => report.id !== reportToDeleteId);
       saveToLocalStorage(REPORTS_STORAGE_KEY, updatedReports);
       toast({ title: "Report Deleted", description: `Report ID ${reportToDeleteId.substring(0,8)}... removed from local storage.` });
 
-      // Check for and delete associated downtime log
       const currentDowntimeLogs = getFromLocalStorage<StoredDowntimeLog[]>(DOWNTIME_STORAGE_KEY, []);
       const updatedDowntimeLogs = currentDowntimeLogs.filter(log => log.sourceReportId !== reportToDeleteId);
 
@@ -236,7 +247,7 @@ export default function ReportPage() {
         toast({ title: "Associated Downtime Log Deleted", description: `Downtime log linked to report ${reportToDeleteId.substring(0,8)}... also removed.`, duration: 4000 });
       }
       
-      loadReports(); // Refresh the list on the current page
+      loadReports();
     } catch (error) {
       console.error("Error deleting report or associated downtime log from localStorage:", error);
       toast({ title: "Deletion Error", description: (error instanceof Error) ? error.message : "Could not delete data from local storage.", variant: "destructive" });
@@ -249,6 +260,7 @@ export default function ReportPage() {
 
   return (
     <div className="space-y-8">
+      <ImageModal isOpen={isImageModalOpen} onClose={() => setIsImageModalOpen(false)} imageUrl={selectedImageUrl} altText={selectedImageAlt} />
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="font-headline text-3xl flex items-center">
@@ -316,9 +328,8 @@ export default function ReportPage() {
               <div className="w-[25%]">Date</div>
               <div className="w-[20%]">Operator</div>
               <div className="w-[15%]">Status</div>
-              <div className="w-[20%] text-center">Photo</div> {/* Adjusted widths slightly */}
-              {/* Actions column header removed as buttons are moved */}
-              <div className="w-[0%]"></div> {/* Spacer for chevron, adjust if needed */}
+              <div className="w-[20%] text-center">Photo</div>
+              <div className="w-[0%]"></div>
             </div>
           {isLoading ? (
             <div className="text-center p-10 text-muted-foreground">Loading reports...</div>
@@ -352,7 +363,7 @@ export default function ReportPage() {
                     <div className="w-full md:w-[20%] flex items-center md:justify-center">
                        <span className="md:hidden font-semibold text-xs text-muted-foreground mr-2">Rep. Photo: </span>
                        {isClickablePhoto(report.representativePhotoUrl) ? (
-                          <a href={report.representativePhotoUrl} target="_blank" rel="noopener noreferrer" className="relative group" onClick={(e) => e.stopPropagation()}>
+                          <button type="button" onClick={(e) => { e.stopPropagation(); openImageModal(report.representativePhotoUrl, `Inspection for ${report.unitId}`);}} className="relative group p-0 border-none bg-transparent h-auto">
                             <Image
                               src={report.representativePhotoUrl}
                               alt={`Inspection for ${report.unitId}`}
@@ -362,8 +373,8 @@ export default function ReportPage() {
                               data-ai-hint={report.representativeDataAiHint}
                               onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
                             />
-                             <ExternalLink className="absolute top-1 right-1 h-3 w-3 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-sm p-0.5" />
-                          </a>
+                             <ZoomIn className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-full p-1" />
+                          </button>
                         ) : (
                           <Image
                             src={report.representativePhotoUrl || PLACEHOLDER_IMAGE_DATA_URL}
@@ -376,13 +387,12 @@ export default function ReportPage() {
                           />
                         )}
                     </div>
-                    {/* Action buttons are removed from here */}
                   </div>
                 </AccordionTrigger>
                 <AccordionContent>
                   <div className="p-4 bg-secondary/30 border-t">
                     <div className="flex justify-end space-x-2 mb-4">
-                        <Button variant="outline" size="sm" className="text-xs" disabled> {/* onClick={(e) => console.log("Edit clicked for " + report.id)}} */}
+                        <Button variant="outline" size="sm" className="text-xs" disabled>
                             <Edit className="mr-1 h-3 w-3" /> Edit
                         </Button>
                         <Button variant="destructive" size="sm" className="text-xs" onClick={() => handleOpenDeleteDialog(report.id)}>
@@ -426,7 +436,7 @@ export default function ReportPage() {
                                 </TableCell>
                                 <TableCell className="text-center">
                                   {isClickablePhoto(item.photo_url) ? (
-                                    <a href={item.photo_url!} target="_blank" rel="noopener noreferrer" className="relative group inline-block">
+                                    <button type="button" onClick={() => openImageModal(item.photo_url!, item.part_name)} className="relative group p-0 border-none bg-transparent h-auto">
                                       <Image
                                         src={item.photo_url!}
                                         alt={item.part_name}
@@ -436,8 +446,8 @@ export default function ReportPage() {
                                         data-ai-hint={item.part_name.toLowerCase()}
                                         onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
                                       />
-                                      <ExternalLink className="absolute top-1 right-1 h-4 w-4 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-sm p-0.5" />
-                                    </a>
+                                      <ZoomIn className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-full p-1" />
+                                    </button>
                                   ) : (
                                     <div className="flex items-center justify-center text-muted-foreground text-xs">
                                       { item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL && !item.photo_url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP") ? (
@@ -475,7 +485,7 @@ export default function ReportPage() {
                 <table className="w-full caption-bottom text-sm">
                   <tbody className="[&_tr:last-child]:border-0">
                     <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
-                      <td colSpan={6} className="p-4 align-middle text-center py-10 text-muted-foreground"> {/* Increased colspan for actions */}
+                      <td colSpan={6} className="p-4 align-middle text-center py-10 text-muted-foreground">
                         No inspection records found with current filters.
                       </td>
                     </tr>
@@ -486,7 +496,6 @@ export default function ReportPage() {
         </CardContent>
       </Card>
 
-      {/* Delete Confirmation Dialog */}
       <AlertDialog open={isDeleteConfirmOpen} onOpenChange={setIsDeleteConfirmOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -508,6 +517,3 @@ export default function ReportPage() {
     </div>
   );
 }
-
-    
-

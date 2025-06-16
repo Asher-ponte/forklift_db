@@ -7,14 +7,15 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import CompletionProgress from '@/components/inspection/CompletionProgress';
 import SafetyCheckModal from '@/components/inspection/SafetyCheckModal';
-import type { ChecklistItem as SafetyCheckModalItem } from '@/lib/mock-data'; // Renamed for clarity for the modal
+import type { ChecklistItem as SafetyCheckModalItem } from '@/lib/mock-data';
 import type { StoredInspectionReport, StoredDowntimeLog, DowntimeUnsafeItem } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle, Send, Edit3, Warehouse, TruckIcon, Loader2, Info, ExternalLink, ImageOff } from 'lucide-react';
+import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle, Send, Edit3, Warehouse, TruckIcon, Loader2, Info, ZoomIn, ImageOff } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
+import ImageModal from '@/components/shared/ImageModal'; // Import the new modal
 import {
   AlertDialog,
   AlertDialogAction,
@@ -30,7 +31,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { isValid, parseISO } from 'date-fns';
 import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
 
-// --- LocalStorage Helper ---
 const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
   if (typeof window === 'undefined') return defaultValue;
   const item = localStorage.getItem(key);
@@ -53,31 +53,6 @@ const saveToLocalStorage = <T>(key: string, value: T): void => {
     console.error(`Error saving to localStorage item ${key}:`, e);
   }
 };
-
-// --- Data Types from Data Management ---
-interface Department {
-  id: string;
-  name: string;
-  description?: string | null;
-}
-
-interface MheUnit {
-  id: string; // uuid
-  unit_code: string;
-  name: string;
-  department_id?: string | null;
-  type?: string | null;
-  status?: 'active' | 'inactive' | 'maintenance';
-}
-
-interface ChecklistMasterItem {
-  id: string;
-  qr_code_data?: string | null;
-  part_name: string;
-  description?: string | null;
-  question: string;
-  is_active?: boolean;
-}
 
 export interface InspectionRecordClientState {
   checklistItemId: string;
@@ -106,7 +81,7 @@ export default function InspectionPage() {
   const [isLoadingInitialData, setIsLoadingInitialData] = useState(true);
 
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('');
-  const [selectedMheId, setSelectedMheId] = useState<string>(''); // This will store the MHE's unique id (uuid)
+  const [selectedMheId, setSelectedMheId] = useState<string>('');
   const [isInspectionSetupConfirmed, setIsInspectionSetupConfirmed] = useState(false);
   
   const [masterChecklist, setMasterChecklist] = useState<ChecklistMasterItem[]>([]);
@@ -123,7 +98,16 @@ export default function InspectionPage() {
   const [previousReport, setPreviousReport] = useState<StoredInspectionReport | null>(null);
   const [isLoadingPreviousReport, setIsLoadingPreviousReport] = useState(false);
 
-  // Load Departments and MHE Units from localStorage
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+  const [selectedImageAlt, setSelectedImageAlt] = useState<string>("Enlarged view");
+
+  const openImageModal = (url: string, alt: string) => {
+    setSelectedImageUrl(url);
+    setSelectedImageAlt(alt);
+    setIsImageModalOpen(true);
+  };
+
   useEffect(() => {
     setIsLoadingInitialData(true);
     try {
@@ -143,18 +127,17 @@ export default function InspectionPage() {
     } finally {
       setIsLoadingInitialData(false);
     }
-  }, [toast]); 
+  }, []); 
 
   const filteredMHEs = useMemo(() => {
     if (!selectedDepartmentId) return [];
     return mheUnits.filter(mhe => mhe.department_id === selectedDepartmentId && mhe.status !== 'inactive');
   }, [selectedDepartmentId, mheUnits]);
 
-  // Load checklist items from localStorage when inspection setup is confirmed
   useEffect(() => {
     if (isInspectionSetupConfirmed) {
       setIsLoadingChecklist(true);
-      const storedItems = getFromLocalStorage<ChecklistMasterItem[]>(CHECKLIST_ITEMS_KEY, []);
+      const storedItems = getFromLocalStorage<ChecklistItemMasterItem[]>(CHECKLIST_ITEMS_KEY, []);
       const activeItems = storedItems.filter(item => item.is_active !== false);
 
       if (activeItems.length > 0) {
@@ -193,7 +176,8 @@ export default function InspectionPage() {
       setSelectedDepartmentId('');
       setSelectedMheId('');
       setIsInspectionSetupConfirmed(false);
-      setMasterChecklist([]); 
+      setMasterChecklist([]);
+      setPreviousReport(null);
     }
   }, [masterChecklist]);
 
@@ -243,7 +227,6 @@ export default function InspectionPage() {
     return mheUnits.find(mhe => mhe.id === selectedMheId);
   }, [selectedMheId, mheUnits]);
 
-  // Load previous inspection report
   useEffect(() => {
     if (selectedMheDetails && selectedMheDetails.unit_code && isInspectionSetupConfirmed) {
       const unitCode = selectedMheDetails.unit_code;
@@ -521,6 +504,7 @@ export default function InspectionPage() {
 
   return (
     <div className="space-y-8">
+      <ImageModal isOpen={isImageModalOpen} onClose={() => setIsImageModalOpen(false)} imageUrl={selectedImageUrl} altText={selectedImageAlt} />
       <Card className="shadow-lg">
         <CardHeader>
           <CardTitle className="font-headline text-3xl flex items-center">
@@ -540,7 +524,6 @@ export default function InspectionPage() {
         </CardContent>
       </Card>
 
-      {/* Previous Inspection Report Display Area */}
       {isInspectionSetupConfirmed && selectedMheDetails && (
         <Card className="shadow-md">
             <CardHeader>
@@ -581,7 +564,7 @@ export default function InspectionPage() {
                                                 <li key={`unsafe-${index}`} className="flex items-start space-x-3 p-2 border-l-4 border-destructive bg-destructive/5 rounded-md">
                                                     <div className="flex-shrink-0 w-16 h-12 relative">
                                                         {isClickablePhoto(item.photo_url) ? (
-                                                          <a href={item.photo_url!} target="_blank" rel="noopener noreferrer" className="relative group block w-full h-full">
+                                                          <button type="button" onClick={() => openImageModal(item.photo_url!, item.part_name)} className="relative group block w-full h-full p-0 border-none bg-transparent">
                                                             <Image
                                                               src={item.photo_url!}
                                                               alt={item.part_name || 'Unsafe item image'}
@@ -591,8 +574,8 @@ export default function InspectionPage() {
                                                               data-ai-hint={item.part_name ? item.part_name.toLowerCase().split(' ').slice(0,2).join(' ') : "defect detail"}
                                                               onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
                                                             />
-                                                            <ExternalLink className="absolute top-1 right-1 h-3 w-3 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-sm p-0.5" />
-                                                          </a>
+                                                            <ZoomIn className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-full p-0.5" />
+                                                          </button>
                                                         ) : (
                                                           <div className="w-full h-full flex items-center justify-center bg-muted rounded-md">
                                                             <ImageOff className="h-6 w-6 text-muted-foreground" />
@@ -765,4 +748,3 @@ export default function InspectionPage() {
     </div>
   );
 }
-

@@ -10,10 +10,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { RefreshCw, ListChecks, CheckSquare, Edit, Eye, ExternalLink, ImageOff, PlusCircle, History } from 'lucide-react';
+import { RefreshCw, ListChecks, CheckSquare, Edit, Eye, ZoomIn, ImageOff, PlusCircle, History } from 'lucide-react';
 import type { StoredDowntimeLog, DowntimeUnsafeItem } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
+import ImageModal from '@/components/shared/ImageModal'; // Import the new modal
 import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -41,6 +42,16 @@ export default function DowntimePage() {
   const [selectedLogForDetails, setSelectedLogForDetails] = useState<StoredDowntimeLog | null>(null);
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState("viewLogs");
+
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+  const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
+  const [selectedImageAlt, setSelectedImageAlt] = useState<string>("Enlarged view");
+
+  const openImageModal = (url: string, alt: string) => {
+    setSelectedImageUrl(url);
+    setSelectedImageAlt(alt);
+    setIsImageModalOpen(true);
+  };
 
   const loadDowntimeLogs = useCallback(async () => {
     setIsLoading(true);
@@ -161,15 +172,18 @@ export default function DowntimePage() {
     setIsDetailsModalOpen(true);
   };
 
-  const isClickablePhoto = (url: string | null | undefined) => url && url !== PLACEHOLDER_IMAGE_DATA_URL && !url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP");
+  const isClickablePhoto = (url: string | null | undefined): url is string => {
+    return !!(url && url !== PLACEHOLDER_IMAGE_DATA_URL && !url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP"));
+  }
 
   const handleLogAdded = () => {
     loadDowntimeLogs();
-    setActiveTab("viewLogs"); // Switch to view logs tab after adding a new log
+    setActiveTab("viewLogs");
   }
 
   return (
     <div className="space-y-8">
+      <ImageModal isOpen={isImageModalOpen} onClose={() => setIsImageModalOpen(false)} imageUrl={selectedImageUrl} altText={selectedImageAlt} />
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
         <TabsList className="grid w-full grid-cols-2 mb-6">
           <TabsTrigger value="logNew" className="py-2.5 text-sm">
@@ -254,7 +268,6 @@ export default function DowntimePage() {
         </TabsContent>
       </Tabs>
 
-      {/* Edit End Time Modal */}
       <Dialog open={isEndTimeModalOpen} onOpenChange={setIsEndTimeModalOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
@@ -286,7 +299,6 @@ export default function DowntimePage() {
         </DialogContent>
       </Dialog>
 
-      {/* Unsafe Item Details Modal */}
       <Dialog open={isDetailsModalOpen} onOpenChange={setIsDetailsModalOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
@@ -312,7 +324,7 @@ export default function DowntimePage() {
                       <TableCell>{item.remarks || <span className="text-xs text-muted-foreground italic">No remarks</span>}</TableCell>
                       <TableCell className="text-center">
                         {isClickablePhoto(item.photo_url) ? (
-                          <a href={item.photo_url!} target="_blank" rel="noopener noreferrer" className="relative group inline-block">
+                          <button type="button" onClick={() => openImageModal(item.photo_url!, item.part_name || 'Unsafe item image')} className="relative group p-0 border-none bg-transparent h-auto">
                             <Image
                               src={item.photo_url!}
                               alt={item.part_name || 'Unsafe item image'}
@@ -322,8 +334,8 @@ export default function DowntimePage() {
                               data-ai-hint={item.part_name ? item.part_name.toLowerCase().split(' ').slice(0,2).join(' ') : "defect detail"}
                               onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
                             />
-                            <ExternalLink className="absolute top-1 right-1 h-4 w-4 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-sm p-0.5" />
-                          </a>
+                            <ZoomIn className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-full p-1" />
+                          </button>
                         ) : (
                            <div className="flex items-center justify-center text-muted-foreground text-xs">
                               { item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL && !item.photo_url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP") ? (
@@ -361,5 +373,3 @@ export default function DowntimePage() {
     </div>
   );
 }
-
-    
