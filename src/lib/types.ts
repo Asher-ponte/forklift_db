@@ -35,3 +35,19 @@ export interface DowntimeLogEntry {
 // This type will be used for what's stored in localStorage for downtime logs
 export type StoredDowntimeLog = DowntimeLogEntry;
 
+// Data types from Data Management for shared use
+export interface Department {
+  id: string;
+  name: string;
+  description?: string | null;
+}
+
+export interface MheUnit {
+  id: string; // uuid
+  unit_code: string;
+  name: string;
+  department_id?: string | null;
+  department_name?: string; // This might be added dynamically if needed
+  type?: string | null;
+  status?: 'active' | 'inactive' | 'maintenance';
+}
