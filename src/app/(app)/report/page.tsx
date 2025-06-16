@@ -132,11 +132,14 @@ export default function ReportPage() {
       let reportsFromStorage = getFromLocalStorage<StoredInspectionReport[]>(REPORTS_STORAGE_KEY, []);
       
       setAllReports(processReportsToDisplayEntries(reportsFromStorage));
-      toast({ title: "Reports Loaded", description: "Data loaded from local storage.", duration: 3000 });
-
+      if (typeof window !== 'undefined') {
+        toast({ title: "Reports Loaded", description: "Data loaded from local storage.", duration: 3000 });
+      }
     } catch (error) {
       console.error("Failed to fetch reports from localStorage:", error);
-      toast({ title: "Error Loading Reports", description: (error instanceof Error) ? error.message : "Could not fetch reports from local storage.", variant: "destructive" });
+      if (typeof window !== 'undefined') {
+        toast({ title: "Error Loading Reports", description: (error instanceof Error) ? error.message : "Could not fetch reports from local storage.", variant: "destructive" });
+      }
       setAllReports([]);
     } finally {
       setIsLoading(false);
@@ -329,7 +332,7 @@ export default function ReportPage() {
               <div className="w-[20%]">Operator</div>
               <div className="w-[15%]">Status</div>
               <div className="w-[20%] text-center">Photo</div>
-              <div className="w-[0%]"></div>
+              <div className="w-[0%]"></div> {/* For accordion chevron */}
             </div>
           {isLoading ? (
             <div className="text-center p-10 text-muted-foreground">Loading reports...</div>
@@ -363,7 +366,7 @@ export default function ReportPage() {
                     <div className="w-full md:w-[20%] flex items-center md:justify-center">
                        <span className="md:hidden font-semibold text-xs text-muted-foreground mr-2">Rep. Photo: </span>
                        {isClickablePhoto(report.representativePhotoUrl) ? (
-                          <button type="button" onClick={(e) => { e.stopPropagation(); openImageModal(report.representativePhotoUrl, `Inspection for ${report.unitId}`);}} className="relative group p-0 border-none bg-transparent h-auto">
+                          <div role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); openImageModal(report.representativePhotoUrl, `Inspection for ${report.unitId}`);}} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openImageModal(report.representativePhotoUrl, `Inspection for ${report.unitId}`);}}} className="relative group p-0 border-none bg-transparent h-auto cursor-pointer">
                             <Image
                               src={report.representativePhotoUrl}
                               alt={`Inspection for ${report.unitId}`}
@@ -374,7 +377,7 @@ export default function ReportPage() {
                               onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
                             />
                              <ZoomIn className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-full p-1" />
-                          </button>
+                          </div>
                         ) : (
                           <Image
                             src={report.representativePhotoUrl || PLACEHOLDER_IMAGE_DATA_URL}
@@ -436,7 +439,7 @@ export default function ReportPage() {
                                 </TableCell>
                                 <TableCell className="text-center">
                                   {isClickablePhoto(item.photo_url) ? (
-                                    <button type="button" onClick={() => openImageModal(item.photo_url!, item.part_name)} className="relative group p-0 border-none bg-transparent h-auto">
+                                    <div role="button" tabIndex={0} onClick={() => openImageModal(item.photo_url!, item.part_name)} onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') openImageModal(item.photo_url!, item.part_name);}} className="relative group p-0 border-none bg-transparent h-auto cursor-pointer inline-block">
                                       <Image
                                         src={item.photo_url!}
                                         alt={item.part_name}
@@ -447,7 +450,7 @@ export default function ReportPage() {
                                         onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
                                       />
                                       <ZoomIn className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-full p-1" />
-                                    </button>
+                                    </div>
                                   ) : (
                                     <div className="flex items-center justify-center text-muted-foreground text-xs">
                                       { item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL && !item.photo_url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP") ? (
@@ -517,3 +520,4 @@ export default function ReportPage() {
     </div>
   );
 }
+

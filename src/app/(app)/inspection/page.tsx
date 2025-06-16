@@ -15,7 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { ListChecks, ScanLine, AlertCircle, CheckCircle, AlertTriangle, Send, Edit3, Warehouse, TruckIcon, Loader2, Info, ZoomIn, ImageOff } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import ImageModal from '@/components/shared/ImageModal'; // Import the new modal
+import ImageModal from '@/components/shared/ImageModal';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -74,6 +74,31 @@ const MHE_UNITS_KEY = 'forkliftMheUnits';
 const isClickablePhoto = (url: string | null | undefined): url is string => {
   return !!(url && url !== PLACEHOLDER_IMAGE_DATA_URL && !url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP"));
 }
+
+interface Department {
+  id: string;
+  name: string;
+  description?: string | null;
+}
+
+interface MheUnit {
+  id: string; // uuid
+  unit_code: string;
+  name: string;
+  department_id?: string | null;
+  type?: string | null;
+  status?: 'active' | 'inactive' | 'maintenance';
+}
+
+interface ChecklistMasterItem {
+  id: string;
+  qr_code_data?: string | null;
+  part_name: string;
+  description?: string | null;
+  question: string;
+  is_active?: boolean;
+}
+
 
 export default function InspectionPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -137,7 +162,7 @@ export default function InspectionPage() {
   useEffect(() => {
     if (isInspectionSetupConfirmed) {
       setIsLoadingChecklist(true);
-      const storedItems = getFromLocalStorage<ChecklistItemMasterItem[]>(CHECKLIST_ITEMS_KEY, []);
+      const storedItems = getFromLocalStorage<ChecklistMasterItem[]>(CHECKLIST_ITEMS_KEY, []);
       const activeItems = storedItems.filter(item => item.is_active !== false);
 
       if (activeItems.length > 0) {
@@ -177,7 +202,7 @@ export default function InspectionPage() {
       setSelectedMheId('');
       setIsInspectionSetupConfirmed(false);
       setMasterChecklist([]);
-      setPreviousReport(null);
+      // previousReport is reset by its own useEffect when MHE/setupConfirmed changes
     }
   }, [masterChecklist]);
 
@@ -564,7 +589,7 @@ export default function InspectionPage() {
                                                 <li key={`unsafe-${index}`} className="flex items-start space-x-3 p-2 border-l-4 border-destructive bg-destructive/5 rounded-md">
                                                     <div className="flex-shrink-0 w-16 h-12 relative">
                                                         {isClickablePhoto(item.photo_url) ? (
-                                                          <button type="button" onClick={() => openImageModal(item.photo_url!, item.part_name)} className="relative group block w-full h-full p-0 border-none bg-transparent">
+                                                          <div role="button" tabIndex={0} onClick={() => openImageModal(item.photo_url!, item.part_name)} onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') openImageModal(item.photo_url!, item.part_name);}} className="relative group block w-full h-full p-0 border-none bg-transparent cursor-pointer">
                                                             <Image
                                                               src={item.photo_url!}
                                                               alt={item.part_name || 'Unsafe item image'}
@@ -575,7 +600,7 @@ export default function InspectionPage() {
                                                               onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
                                                             />
                                                             <ZoomIn className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-full p-0.5" />
-                                                          </button>
+                                                          </div>
                                                         ) : (
                                                           <div className="w-full h-full flex items-center justify-center bg-muted rounded-md">
                                                             <ImageOff className="h-6 w-6 text-muted-foreground" />
@@ -748,3 +773,4 @@ export default function InspectionPage() {
     </div>
   );
 }
+

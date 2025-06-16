@@ -14,7 +14,7 @@ import { RefreshCw, ListChecks, CheckSquare, Edit, Eye, ZoomIn, ImageOff, PlusCi
 import type { StoredDowntimeLog, DowntimeUnsafeItem } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
-import ImageModal from '@/components/shared/ImageModal'; // Import the new modal
+import ImageModal from '@/components/shared/ImageModal';
 import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -75,16 +75,19 @@ export default function DowntimePage() {
         });
 
       setDowntimeLogs(validLogs);
-      toast({ title: "Downtime Logs Loaded", description: "Data loaded from local storage.", duration: 3000 });
-
+      if (typeof window !== 'undefined') {
+        toast({ title: "Downtime Logs Loaded", description: "Data loaded from local storage.", duration: 3000 });
+      }
     } catch (error) {
       console.error("An unexpected error occurred while loading downtime logs from localStorage:", error);
       setDowntimeLogs([]); 
-      toast({
-        title: "Error Loading Downtime Logs",
-        description: (error instanceof Error) ? error.message : "An unexpected error occurred.",
-        variant: "destructive",
-      });
+      if (typeof window !== 'undefined') {
+        toast({
+          title: "Error Loading Downtime Logs",
+          description: (error instanceof Error) ? error.message : "An unexpected error occurred.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsLoading(false);
     }
@@ -324,7 +327,7 @@ export default function DowntimePage() {
                       <TableCell>{item.remarks || <span className="text-xs text-muted-foreground italic">No remarks</span>}</TableCell>
                       <TableCell className="text-center">
                         {isClickablePhoto(item.photo_url) ? (
-                          <button type="button" onClick={() => openImageModal(item.photo_url!, item.part_name || 'Unsafe item image')} className="relative group p-0 border-none bg-transparent h-auto">
+                          <div role="button" tabIndex={0} onClick={() => openImageModal(item.photo_url!, item.part_name || 'Unsafe item image')} onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') openImageModal(item.photo_url!, item.part_name || 'Unsafe item image');}} className="relative group p-0 border-none bg-transparent h-auto cursor-pointer inline-block">
                             <Image
                               src={item.photo_url!}
                               alt={item.part_name || 'Unsafe item image'}
@@ -335,7 +338,7 @@ export default function DowntimePage() {
                               onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
                             />
                             <ZoomIn className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-full p-1" />
-                          </button>
+                          </div>
                         ) : (
                            <div className="flex items-center justify-center text-muted-foreground text-xs">
                               { item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL && !item.photo_url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP") ? (
@@ -373,3 +376,4 @@ export default function DowntimePage() {
     </div>
   );
 }
+
