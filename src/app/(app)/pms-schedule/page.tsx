@@ -16,7 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import type { MheUnit, StoredPmsTaskMaster, StoredPmsScheduleEntry, PmsScheduleDisplayEntry } from '@/lib/types';
 import { v4 as uuidv4 } from 'uuid';
-import { format, parseISO, addDays, addWeeks, addMonths, subDays, isPast } from 'date-fns';
+import { format, parseISO, addDays, addWeeks, addMonths, isPast } from 'date-fns';
 
 // --- LocalStorage Keys ---
 const MHE_UNITS_KEY = 'forkliftMheUnits';
@@ -48,6 +48,9 @@ const MOCK_PMS_TASK_MASTERS: StoredPmsTaskMaster[] = [
   { id: uuidv4(), name: 'Battery Watering & Check (Electric)', description: 'Check and top-up battery water levels, clean terminals.', frequency_unit: 'weeks', frequency_value: 1, category: 'Electrical', is_active: true, estimated_duration_minutes: 45 },
 ];
 
+const ALL_MHES_SELECT_VALUE = "__ALL_MHES__";
+const ALL_STATUS_SELECT_VALUE = "__ALL_STATUS__";
+
 export default function PmsSchedulePage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -72,14 +75,12 @@ export default function PmsSchedulePage() {
     if (storedTasks.length === 0) {
       saveToLocalStorage(PMS_TASK_MASTER_KEY, MOCK_PMS_TASK_MASTERS);
     }
-    // For schedule entries, we might generate some based on MHE units and tasks if empty.
-    // For now, just ensure master tasks are there. Schedules can be added manually or via a setup process later.
   }, []);
 
 
   const loadPmsData = useCallback(async () => {
     setIsLoading(true);
-    initializeMockData(); // Ensure mock master tasks are present
+    initializeMockData(); 
 
     try {
       const fetchedMheUnits = getFromLocalStorage<MheUnit[]>(MHE_UNITS_KEY, []);
@@ -89,7 +90,6 @@ export default function PmsSchedulePage() {
       setMheUnits(fetchedMheUnits);
       setTaskMasters(fetchedTaskMasters);
       
-      // Update status for overdue tasks
       const today = new Date();
       today.setHours(0,0,0,0); 
       const updatedEntries = fetchedScheduleEntries.map(entry => {
@@ -99,7 +99,7 @@ export default function PmsSchedulePage() {
         return entry;
       });
       setScheduleEntries(updatedEntries);
-      saveToLocalStorage(PMS_SCHEDULE_ENTRIES_KEY, updatedEntries); // Save updated statuses
+      saveToLocalStorage(PMS_SCHEDULE_ENTRIES_KEY, updatedEntries);
 
       toast({ title: "PMS Data Loaded", description: "Fetched MHEs, Task Masters, and Schedule Entries.", duration: 2000});
     } catch (error) {
@@ -178,7 +178,6 @@ export default function PmsSchedulePage() {
     setScheduleEntries(updatedEntries);
     toast({ title: "Task Completed", description: `${selectedEntryForCompletion.task_name} for ${selectedEntryForCompletion.mhe_unit_code} marked as complete.` });
     
-    // Optional: Generate next due date (simplified example)
     const completedTaskMaster = taskMasters.find(tm => tm.id === selectedEntryForCompletion.pms_task_master_id);
     if (completedTaskMaster && completedTaskMaster.frequency_unit !== 'operating_hours') {
       let nextDueDate: Date;
@@ -187,7 +186,7 @@ export default function PmsSchedulePage() {
         case 'days': nextDueDate = addDays(currentCompletionDate, completedTaskMaster.frequency_value); break;
         case 'weeks': nextDueDate = addWeeks(currentCompletionDate, completedTaskMaster.frequency_value); break;
         case 'months': nextDueDate = addMonths(currentCompletionDate, completedTaskMaster.frequency_value); break;
-        default: nextDueDate = addDays(currentCompletionDate, 30); // fallback
+        default: nextDueDate = addDays(currentCompletionDate, 30); 
       }
       const newScheduleEntry: StoredPmsScheduleEntry = {
         id: uuidv4(),
@@ -199,7 +198,7 @@ export default function PmsSchedulePage() {
       const allEntries = getFromLocalStorage<StoredPmsScheduleEntry[]>(PMS_SCHEDULE_ENTRIES_KEY, []);
       allEntries.push(newScheduleEntry);
       saveToLocalStorage(PMS_SCHEDULE_ENTRIES_KEY, allEntries);
-      loadPmsData(); // Reload to show the new entry and re-evaluate statuses
+      loadPmsData(); 
       toast({title: "Next Task Scheduled", description: `Next ${completedTaskMaster.name} scheduled for ${format(nextDueDate, 'P')}.`});
     }
 
@@ -210,10 +209,10 @@ export default function PmsSchedulePage() {
   
   const getStatusBadgeVariant = (status: PmsScheduleDisplayEntry['status']): "default" | "secondary" | "destructive" | "outline" => {
     switch (status) {
-      case 'Completed': return 'default'; // Green like / primary
+      case 'Completed': return 'default'; 
       case 'Pending': return 'secondary';
       case 'Overdue': return 'destructive';
-      case 'In Progress': return 'outline'; // Yellowish/Orange (accent) - needs theme adjustment or custom class
+      case 'In Progress': return 'outline'; 
       case 'Skipped': return 'outline';
       default: return 'secondary';
     }
@@ -254,20 +253,26 @@ export default function PmsSchedulePage() {
         <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
             <div>
                 <Label htmlFor="filterMhe">MHE Unit</Label>
-                <Select value={filterMheId} onValueChange={setFilterMheId}>
+                <Select 
+                  value={filterMheId} 
+                  onValueChange={(selectedValue) => setFilterMheId(selectedValue === ALL_MHES_SELECT_VALUE ? '' : selectedValue)}
+                >
                     <SelectTrigger id="filterMhe"><SelectValue placeholder="All MHEs" /></SelectTrigger>
                     <SelectContent>
-                        <SelectItem value="">All MHEs</SelectItem>
+                        <SelectItem value={ALL_MHES_SELECT_VALUE}>All MHEs</SelectItem>
                         {mheUnits.map(mhe => <SelectItem key={mhe.id} value={mhe.id}>{mhe.unit_code} - {mhe.name}</SelectItem>)}
                     </SelectContent>
                 </Select>
             </div>
             <div>
                 <Label htmlFor="filterStatus">Status</Label>
-                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                <Select 
+                  value={filterStatus} 
+                  onValueChange={(selectedValue) => setFilterStatus(selectedValue === ALL_STATUS_SELECT_VALUE ? '' : selectedValue)}
+                >
                     <SelectTrigger id="filterStatus"><SelectValue placeholder="All Statuses" /></SelectTrigger>
                     <SelectContent>
-                        <SelectItem value="">All Statuses</SelectItem>
+                        <SelectItem value={ALL_STATUS_SELECT_VALUE}>All Statuses</SelectItem>
                         {['Pending', 'In Progress', 'Completed', 'Overdue', 'Skipped'].map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
                     </SelectContent>
                 </Select>
@@ -286,7 +291,6 @@ export default function PmsSchedulePage() {
       <Card>
         <CardHeader className="flex flex-row justify-between items-center">
           <CardTitle className="text-xl">Scheduled Tasks</CardTitle>
-           {/* Placeholder for Add New Schedule Button */}
           <Button variant="outline" disabled><PlusCircle className="mr-2 h-4 w-4"/> Add New Schedule (Future)</Button>
         </CardHeader>
         <CardContent>
@@ -340,7 +344,6 @@ export default function PmsSchedulePage() {
         </CardContent>
       </Card>
       
-      {/* Placeholder for Managing Master PMS Tasks */}
       <Card>
         <CardHeader>
             <CardTitle className="text-xl flex items-center"><Settings2 className="mr-2 h-5 w-5 text-primary"/>Manage Master PMS Tasks</CardTitle>
@@ -348,12 +351,10 @@ export default function PmsSchedulePage() {
         </CardHeader>
         <CardContent>
             <p className="text-muted-foreground">This section will allow supervisors to add, edit, and manage the master list of PMS tasks that can be scheduled for MHE units.</p>
-            {/* <Button variant="outline" disabled><PlusCircle className="mr-2 h-4 w-4"/> Add Master Task (Future)</Button> */}
         </CardContent>
       </Card>
 
 
-      {/* Complete Task Modal */}
       <Dialog open={isCompleteModalOpen} onOpenChange={setIsCompleteModalOpen}>
         <DialogContent>
           <DialogHeader>
@@ -388,3 +389,5 @@ export default function PmsSchedulePage() {
     </div>
   );
 }
+
+    
