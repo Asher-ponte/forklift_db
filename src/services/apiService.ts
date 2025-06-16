@@ -4,23 +4,71 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
-    const errorData = await response.json().catch(() => ({ message: response.statusText }));
+    // Try to parse error response from API
+    let errorData;
+    try {
+      errorData = await response.json();
+    } catch (e) {
+      // If response is not JSON, use statusText
+      errorData = { message: response.statusText || `API request failed with status ${response.status}` };
+    }
     throw new Error(errorData.message || `API request failed with status ${response.status}`);
   }
-  return response.json() as Promise<T>;
+  // If response is OK, try to parse JSON, handle cases where body might be empty for 204 etc.
+  const contentType = response.headers.get("content-type");
+  if (response.status === 204) { // No Content
+    return Promise.resolve(undefined as unknown as T);
+  }
+  if (contentType && contentType.indexOf("application/json") !== -1) {
+    return response.json() as Promise<T>;
+  } else {
+    // Handle non-JSON success responses by returning the text or undefined if empty
+    return response.text().then(text => {
+        if (text.length > 0) {
+            console.warn("API success response was not JSON:", text);
+            // Depending on expectations, you might want to return text here
+            // For now, if it's not JSON and not 204, it's unexpected for this app's design
+        }
+        return undefined as unknown as T; // Or handle as plain text if appropriate
+    });
+  }
 }
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  if (!API_BASE_URL) {
+    console.error("API_BASE_URL is not defined. Please check your environment variable NEXT_PUBLIC_API_BASE_URL.");
+    throw new Error("API_BASE_URL is not defined. Please check your environment variables.");
+  }
   const url = `${API_BASE_URL}${endpoint}`;
-  const response = await fetch(url, {
-    headers: {
-      'Content-Type': 'application/json',
-      // Add Authorization header if/when auth tokens are implemented
-      ...options?.headers,
-    },
-    ...options,
-  });
-  return handleResponse<T>(response);
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'Content-Type': 'application/json',
+        // Add Authorization header if/when auth tokens are implemented
+        ...options?.headers,
+      },
+      ...options,
+    });
+    return handleResponse<T>(response);
+  } catch (error) {
+    // This catch block will handle network errors (e.g., server down, DNS issues, CORS blocked by browser before response)
+    // or errors thrown by handleResponse if response.ok is false.
+    
+    let errorMessage = `API request to ${url} failed.`;
+
+    if (error instanceof TypeError && error.message.toLowerCase().includes("failed to fetch")) {
+        // This specific error often means network issue, server down, or CORS
+        errorMessage += 
+            ` This often indicates a network issue, the API server at ${API_BASE_URL} is not running/accessible, ` +
+            `or CORS is not configured correctly on the server to accept requests from this origin.`;
+    } else if (error instanceof Error) {
+        errorMessage += ` Details: ${error.message}`;
+    } else {
+        errorMessage += ` An unknown error occurred.`;
+    }
+    console.error(errorMessage, error); // Log the full error for debugging
+    throw new Error(errorMessage); // Re-throw a more informative error for the UI/toast
+  }
 }
 
 // Auth
