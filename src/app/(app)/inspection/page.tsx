@@ -202,7 +202,7 @@ export default function InspectionPage() {
       setSelectedMheId('');
       setIsInspectionSetupConfirmed(false);
       setMasterChecklist([]);
-      // previousReport is reset by its own useEffect when MHE/setupConfirmed changes
+      // previousReport is handled by its own useEffect
     }
   }, [masterChecklist]);
 
@@ -285,7 +285,7 @@ export default function InspectionPage() {
       setPreviousReport(null); 
       if(isLoadingPreviousReport) setIsLoadingPreviousReport(false);
     }
-  }, [selectedMheDetails, isInspectionSetupConfirmed, toast]); 
+  }, [selectedMheDetails, isInspectionSetupConfirmed]); 
 
   const handleStartInspectionSetup = () => {
     if (!selectedDepartmentId) {
@@ -565,7 +565,7 @@ export default function InspectionPage() {
                 ) : previousReport ? (
                     <Accordion type="single" collapsible className="w-full" defaultValue="previous-report-details">
                         <AccordionItem value="previous-report-details">
-                            <AccordionTrigger className="text-base hover:no-underline focus:outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background rounded-md px-2 -mx-2">
+                            <AccordionTrigger className="text-base hover:no-underline focus:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background rounded-md px-2 -mx-2">
                                 <div className="flex justify-between items-center w-full">
                                     <span className="text-left">
                                         Last Inspected: {new Date(previousReport.date).toLocaleString()}
@@ -589,11 +589,12 @@ export default function InspectionPage() {
                                                 <li key={`unsafe-${index}`} className="flex items-start space-x-3 p-2 border-l-4 border-destructive bg-destructive/5 rounded-md">
                                                     <div className="flex-shrink-0 w-16 h-12 relative">
                                                         {isClickablePhoto(item.photo_url) ? (
-                                                          <div role="button" tabIndex={0} onClick={() => openImageModal(item.photo_url!, item.part_name)} onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') openImageModal(item.photo_url!, item.part_name);}} className="relative group block w-full h-full p-0 border-none bg-transparent cursor-pointer">
+                                                          <div role="button" tabIndex={0} onClick={() => openImageModal(item.photo_url!, item.part_name || 'Unsafe item image')} onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') openImageModal(item.photo_url!, item.part_name || 'Unsafe item image');}} className="relative group block w-full h-full p-0 border-none bg-transparent cursor-pointer">
                                                             <Image
                                                               src={item.photo_url!}
                                                               alt={item.part_name || 'Unsafe item image'}
-                                                              layout="fill"
+                                                              width={64}
+                                                              height={48}
                                                               objectFit="cover"
                                                               className="rounded-md group-hover:opacity-80 transition-opacity"
                                                               data-ai-hint={item.part_name ? item.part_name.toLowerCase().split(' ').slice(0,2).join(' ') : "defect detail"}
