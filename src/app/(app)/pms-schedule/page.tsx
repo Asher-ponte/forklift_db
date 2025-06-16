@@ -9,10 +9,11 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose, DialogTrigger } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { CalendarCheck, CheckSquare, Filter, ListFilter, Loader2, PlusCircle, RefreshCw, Settings2, AlertTriangle } from 'lucide-react';
+import { CalendarCheck, CheckSquare, Filter, ListFilter, Loader2, PlusCircle, RefreshCw, Settings2, AlertTriangle, Edit, Trash2 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import type { MheUnit, StoredPmsTaskMaster, StoredPmsScheduleEntry, PmsScheduleDisplayEntry } from '@/lib/types';
@@ -94,9 +95,14 @@ export default function PmsSchedulePage() {
   
   const [isCompleteModalOpen, setIsCompleteModalOpen] = useState(false);
   const [isAddMasterTaskModalOpen, setIsAddMasterTaskModalOpen] = useState(false);
+  const [isEditMasterTaskModalOpen, setIsEditMasterTaskModalOpen] = useState(false);
   const [isAddScheduleModalOpen, setIsAddScheduleModalOpen] = useState(false);
+  const [isDeleteMasterTaskConfirmOpen, setIsDeleteMasterTaskConfirmOpen] = useState(false);
 
   const [selectedEntryForCompletion, setSelectedEntryForCompletion] = useState<PmsScheduleDisplayEntry | null>(null);
+  const [editingMasterTask, setEditingMasterTask] = useState<StoredPmsTaskMaster | null>(null);
+  const [masterTaskToDeleteId, setMasterTaskToDeleteId] = useState<string | null>(null);
+
   const [completionNotes, setCompletionNotes] = useState('');
   const [completionDate, setCompletionDate] = useState('');
 
@@ -105,10 +111,22 @@ export default function PmsSchedulePage() {
   const [filterDueDateStart, setFilterDueDateStart] = useState<string>('');
   const [filterDueDateEnd, setFilterDueDateEnd] = useState<string>('');
 
-  const { control: controlMasterTask, register: registerMasterTask, handleSubmit: handleSubmitMasterTask, reset: resetMasterTaskForm, formState: { errors: masterTaskErrors } } = useForm<PmsTaskMasterFormData>({
+  const { 
+    control: controlMasterTask, 
+    register: registerMasterTask, 
+    handleSubmit: handleSubmitMasterTask, 
+    reset: resetMasterTaskForm, 
+    setValue: setMasterTaskFormValue,
+    formState: { errors: masterTaskErrors } 
+  } = useForm<PmsTaskMasterFormData>({
     resolver: zodResolver(pmsTaskMasterSchema), defaultValues: { is_active: true, frequency_unit: 'days' }
   });
-  const { control: controlScheduleEntry, handleSubmit: handleSubmitScheduleEntry, reset: resetScheduleEntryForm, formState: { errors: scheduleEntryErrors } } = useForm<PmsScheduleEntryFormData>({
+  const { 
+    control: controlScheduleEntry, 
+    handleSubmit: handleSubmitScheduleEntry, 
+    reset: resetScheduleEntryForm, 
+    formState: { errors: scheduleEntryErrors } 
+  } = useForm<PmsScheduleEntryFormData>({
     resolver: zodResolver(pmsScheduleEntrySchema),
   });
 
@@ -300,29 +318,64 @@ export default function PmsSchedulePage() {
       
       toast({title: "Next Task Scheduled", description: `Next ${completedTaskMaster.name} for ${selectedEntryForCompletion.mhe_unit_code} scheduled for ${format(nextDueDate, 'P')}.`});
     }
-    fetchScheduleEntriesCallback(); // This will re-fetch and include the new entry and updated old one
+    fetchScheduleEntriesCallback(); 
     setIsCompleteModalOpen(false);
     setSelectedEntryForCompletion(null);
     setCompletionNotes('');
   };
 
-  const onAddMasterTask = async (data: PmsTaskMasterFormData) => {
+  const handleOpenAddMasterTaskModal = () => {
+    setEditingMasterTask(null);
+    resetMasterTaskForm({is_active: true, frequency_unit: 'days', frequency_value:1, name: '', description: '', category: '', estimated_duration_minutes: undefined });
+    setIsAddMasterTaskModalOpen(true);
+  };
+
+  const handleOpenEditMasterTaskModal = (task: StoredPmsTaskMaster) => {
+    setEditingMasterTask(task);
+    setMasterTaskFormValue("name", task.name);
+    setMasterTaskFormValue("description", task.description);
+    setMasterTaskFormValue("frequency_unit", task.frequency_unit);
+    setMasterTaskFormValue("frequency_value", task.frequency_value);
+    setMasterTaskFormValue("category", task.category);
+    setMasterTaskFormValue("estimated_duration_minutes", task.estimated_duration_minutes);
+    setMasterTaskFormValue("is_active", task.is_active !== false);
+    setIsEditMasterTaskModalOpen(true);
+  };
+
+  const onSubmitMasterTask = async (data: PmsTaskMasterFormData) => {
     try {
       const currentMasterTasks = getFromLocalStorage<StoredPmsTaskMaster[]>(PMS_TASK_MASTER_KEY, []);
-      if (currentMasterTasks.some(task => task.name.toLowerCase() === data.name.toLowerCase())) {
-        toast({ title: "Error Adding Task", description: "A master task with this name already exists.", variant: "destructive" });
-        return;
+      if (editingMasterTask) { // Editing existing task
+        const taskIndex = currentMasterTasks.findIndex(task => task.id === editingMasterTask.id);
+        if (taskIndex === -1) {
+            toast({ title: "Error Editing Task", description: "Master task not found.", variant: "destructive" });
+            return;
+        }
+        if (currentMasterTasks.some(task => task.name.toLowerCase() === data.name.toLowerCase() && task.id !== editingMasterTask.id)) {
+            toast({ title: "Error Editing Task", description: "Another master task with this name already exists.", variant: "destructive" });
+            return;
+        }
+        currentMasterTasks[taskIndex] = { ...editingMasterTask, ...data, estimated_duration_minutes: data.estimated_duration_minutes || null };
+        toast({ title: "Success", description: "Master PMS Task updated." });
+        setIsEditMasterTaskModalOpen(false);
+
+      } else { // Adding new task
+        if (currentMasterTasks.some(task => task.name.toLowerCase() === data.name.toLowerCase())) {
+            toast({ title: "Error Adding Task", description: "A master task with this name already exists.", variant: "destructive" });
+            return;
+        }
+        const newTaskMaster: StoredPmsTaskMaster = { id: uuidv4(), ...data, estimated_duration_minutes: data.estimated_duration_minutes || null };
+        currentMasterTasks.push(newTaskMaster);
+        toast({ title: "Success", description: "Master PMS Task added." });
+        setIsAddMasterTaskModalOpen(false);
       }
-      const newTaskMaster: StoredPmsTaskMaster = { id: uuidv4(), ...data, estimated_duration_minutes: data.estimated_duration_minutes || null };
-      currentMasterTasks.push(newTaskMaster);
-      saveToLocalStorage(PMS_TASK_MASTER_KEY, currentMasterTasks);
       
-      toast({ title: "Success", description: "Master PMS Task added locally." });
+      saveToLocalStorage(PMS_TASK_MASTER_KEY, currentMasterTasks);
       fetchTaskMastersCallback(); 
       resetMasterTaskForm({is_active: true, frequency_unit: 'days', frequency_value:1, name: '', description: '', category: '', estimated_duration_minutes: undefined });
-      setIsAddMasterTaskModalOpen(false);
+      setEditingMasterTask(null);
     } catch (error) {
-      toast({ title: "Error Adding Master Task", description: (error instanceof Error) ? error.message : "Could not add master task.", variant: "destructive" });
+      toast({ title: "Error Saving Master Task", description: (error instanceof Error) ? error.message : "Could not save master task.", variant: "destructive" });
     }
   };
   
@@ -352,6 +405,45 @@ export default function PmsSchedulePage() {
       setIsAddScheduleModalOpen(false);
     } catch (error) {
       toast({ title: "Error Adding Schedule", description: (error instanceof Error) ? error.message : "Could not add schedule entry.", variant: "destructive" });
+    }
+  };
+  
+  const handleOpenDeleteMasterTaskDialog = (taskId: string) => {
+    setMasterTaskToDeleteId(taskId);
+    setIsDeleteMasterTaskConfirmOpen(true);
+  };
+
+  const handleConfirmDeleteMasterTask = () => {
+    if (!masterTaskToDeleteId) return;
+    try {
+        let currentMasterTasks = getFromLocalStorage<StoredPmsTaskMaster[]>(PMS_TASK_MASTER_KEY, []);
+        const taskToDelete = currentMasterTasks.find(task => task.id === masterTaskToDeleteId);
+        
+        currentMasterTasks = currentMasterTasks.filter(task => task.id !== masterTaskToDeleteId);
+        saveToLocalStorage(PMS_TASK_MASTER_KEY, currentMasterTasks);
+        
+        toast({ title: "Master Task Deleted", description: `Master task "${taskToDelete?.name}" deleted.`});
+
+        // Check if this task is used in any schedule entries
+        const currentScheduleEntries = getFromLocalStorage<StoredPmsScheduleEntry[]>(PMS_SCHEDULE_ENTRIES_KEY, []);
+        const isTaskInUse = currentScheduleEntries.some(entry => entry.pms_task_master_id === masterTaskToDeleteId);
+        if (isTaskInUse) {
+            toast({
+                title: "Warning: Task In Use",
+                description: `The deleted master task "${taskToDelete?.name}" was used in some schedule entries. These entries might be affected and may require manual review or cleanup.`,
+                variant: "default", // Use default variant for warning, not destructive
+                duration: 7000
+            });
+        }
+
+        fetchTaskMastersCallback();
+        // Optionally, refresh schedule entries too if orphaned entries should be handled/hidden immediately
+        // fetchScheduleEntriesCallback(); 
+    } catch (error) {
+        toast({ title: "Error Deleting Master Task", description: (error instanceof Error) ? error.message : "Could not delete master task.", variant: "destructive" });
+    } finally {
+        setIsDeleteMasterTaskConfirmOpen(false);
+        setMasterTaskToDeleteId(null);
     }
   };
   
@@ -385,6 +477,79 @@ export default function PmsSchedulePage() {
       </div>
     );
   }
+
+  // Master Task Form Modal (used for both Add and Edit)
+  const MasterTaskFormModal = ({ isOpen, onOpenChange, currentTask }: { isOpen: boolean, onOpenChange: (open: boolean) => void, currentTask: StoredPmsTaskMaster | null }) => (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>{currentTask ? 'Edit Master PMS Task' : 'Add New Master PMS Task'}</DialogTitle>
+          <DialogDescription>{currentTask ? 'Update details for this maintenance task.' : 'Fill in details for a reusable maintenance task.'}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmitMasterTask(onSubmitMasterTask)} className="space-y-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
+          <div>
+            <Label htmlFor="masterTaskName">Task Name</Label>
+            <Input id="masterTaskName" {...registerMasterTask("name")} className="mt-1"/>
+            {masterTaskErrors.name && <p className="text-sm text-destructive mt-1">{masterTaskErrors.name.message}</p>}
+          </div>
+          <div>
+            <Label htmlFor="masterTaskDesc">Description (Optional)</Label>
+            <Textarea id="masterTaskDesc" {...registerMasterTask("description")} className="mt-1"/>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="masterTaskFreqUnit">Frequency Unit</Label>
+              <Controller
+                name="frequency_unit"
+                control={controlMasterTask}
+                render={({ field }) => (
+                  <Select onValueChange={field.onChange} value={field.value} >
+                    <SelectTrigger id="masterTaskFreqUnit" className="mt-1">
+                      <SelectValue placeholder="Select unit" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="days">Days</SelectItem>
+                      <SelectItem value="weeks">Weeks</SelectItem>
+                      <SelectItem value="months">Months</SelectItem>
+                      <SelectItem value="operating_hours">Operating Hours</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+              {masterTaskErrors.frequency_unit && <p className="text-sm text-destructive mt-1">{masterTaskErrors.frequency_unit.message}</p>}
+            </div>
+            <div>
+              <Label htmlFor="masterTaskFreqVal">Frequency Value</Label>
+              <Input id="masterTaskFreqVal" type="number" {...registerMasterTask("frequency_value")} className="mt-1"/>
+              {masterTaskErrors.frequency_value && <p className="text-sm text-destructive mt-1">{masterTaskErrors.frequency_value.message}</p>}
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="masterTaskCategory">Category (Optional)</Label>
+            <Input id="masterTaskCategory" {...registerMasterTask("category")} className="mt-1"/>
+          </div>
+          <div>
+            <Label htmlFor="masterTaskDuration">Est. Duration (Minutes, Optional)</Label>
+            <Input id="masterTaskDuration" type="number" {...registerMasterTask("estimated_duration_minutes", { valueAsNumber: true })} className="mt-1"/>
+          </div>
+          <div className="flex items-center space-x-2 pt-2">
+            <Controller
+              name="is_active"
+              control={controlMasterTask}
+              render={({ field }) => (
+                <Switch id="masterTaskIsActive" checked={field.value} onCheckedChange={field.onChange} />
+              )}
+            />
+            <Label htmlFor="masterTaskIsActive" className="text-sm">Task is Active</Label>
+          </div>
+          <DialogFooter className="pt-4">
+            <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
+            <Button type="submit">{currentTask ? 'Save Changes' : 'Save Master Task'}</Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
 
   return (
     <div className="space-y-6">
@@ -581,80 +746,9 @@ export default function PmsSchedulePage() {
                 <CardTitle className="text-xl flex items-center"><Settings2 className="mr-2 h-5 w-5 text-primary"/>Manage Master PMS Tasks</CardTitle>
                 <CardDescription>Define standard preventive maintenance tasks and their frequencies.</CardDescription>
             </div>
-             <Dialog open={isAddMasterTaskModalOpen} onOpenChange={setIsAddMasterTaskModalOpen}>
-                <DialogTrigger asChild>
-                    <Button variant="outline" onClick={() => { resetMasterTaskForm({is_active: true, frequency_unit: 'days', frequency_value:1, name: '', description: '', category: '', estimated_duration_minutes: undefined }); setIsAddMasterTaskModalOpen(true);}}>
-                        <PlusCircle className="mr-2 h-4 w-4"/> Add Master Task
-                    </Button>
-                </DialogTrigger>
-                <DialogContent className="sm:max-w-md">
-                    <DialogHeader>
-                        <DialogTitle>Add New Master PMS Task</DialogTitle>
-                        <DialogDescription>Fill in details for a reusable maintenance task.</DialogDescription>
-                    </DialogHeader>
-                    <form onSubmit={handleSubmitMasterTask(onAddMasterTask)} className="space-y-4 py-4 max-h-[70vh] overflow-y-auto pr-2">
-                        <div>
-                            <Label htmlFor="masterTaskName">Task Name</Label>
-                            <Input id="masterTaskName" {...registerMasterTask("name")} className="mt-1"/>
-                            {masterTaskErrors.name && <p className="text-sm text-destructive mt-1">{masterTaskErrors.name.message}</p>}
-                        </div>
-                        <div>
-                            <Label htmlFor="masterTaskDesc">Description (Optional)</Label>
-                            <Textarea id="masterTaskDesc" {...registerMasterTask("description")} className="mt-1"/>
-                        </div>
-                        <div className="grid grid-cols-2 gap-4">
-                            <div>
-                                <Label htmlFor="masterTaskFreqUnit">Frequency Unit</Label>
-                                 <Controller
-                                    name="frequency_unit"
-                                    control={controlMasterTask}
-                                    render={({ field }) => (
-                                        <Select onValueChange={field.onChange} value={field.value} >
-                                            <SelectTrigger id="masterTaskFreqUnit" className="mt-1">
-                                                <SelectValue placeholder="Select unit" />
-                                            </SelectTrigger>
-                                            <SelectContent>
-                                                <SelectItem value="days">Days</SelectItem>
-                                                <SelectItem value="weeks">Weeks</SelectItem>
-                                                <SelectItem value="months">Months</SelectItem>
-                                                <SelectItem value="operating_hours">Operating Hours</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                    )}
-                                />
-                                {masterTaskErrors.frequency_unit && <p className="text-sm text-destructive mt-1">{masterTaskErrors.frequency_unit.message}</p>}
-                            </div>
-                            <div>
-                                <Label htmlFor="masterTaskFreqVal">Frequency Value</Label>
-                                <Input id="masterTaskFreqVal" type="number" {...registerMasterTask("frequency_value")} className="mt-1"/>
-                                {masterTaskErrors.frequency_value && <p className="text-sm text-destructive mt-1">{masterTaskErrors.frequency_value.message}</p>}
-                            </div>
-                        </div>
-                        <div>
-                            <Label htmlFor="masterTaskCategory">Category (Optional)</Label>
-                            <Input id="masterTaskCategory" {...registerMasterTask("category")} className="mt-1"/>
-                        </div>
-                        <div>
-                            <Label htmlFor="masterTaskDuration">Est. Duration (Minutes, Optional)</Label>
-                            <Input id="masterTaskDuration" type="number" {...registerMasterTask("estimated_duration_minutes")} className="mt-1"/>
-                        </div>
-                         <div className="flex items-center space-x-2 pt-2">
-                            <Controller
-                                name="is_active"
-                                control={controlMasterTask}
-                                render={({ field }) => (
-                                    <Switch id="masterTaskIsActive" checked={field.value} onCheckedChange={field.onChange} />
-                                )}
-                            />
-                            <Label htmlFor="masterTaskIsActive" className="text-sm">Task is Active</Label>
-                        </div>
-                        <DialogFooter className="pt-4">
-                            <DialogClose asChild><Button type="button" variant="outline">Cancel</Button></DialogClose>
-                            <Button type="submit">Save Master Task</Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
-            </Dialog>
+            <Button variant="outline" onClick={handleOpenAddMasterTaskModal}>
+                <PlusCircle className="mr-2 h-4 w-4"/> Add Master Task
+            </Button>
         </CardHeader>
         <CardContent>
             {isDataLoading.tasks ? (
@@ -671,6 +765,7 @@ export default function PmsSchedulePage() {
                                 <TableHead>Category</TableHead>
                                 <TableHead>Est. Duration</TableHead>
                                 <TableHead>Active</TableHead>
+                                <TableHead className="text-right">Actions</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -681,6 +776,14 @@ export default function PmsSchedulePage() {
                                     <TableCell>{task.category || 'N/A'}</TableCell>
                                     <TableCell>{task.estimated_duration_minutes ? `${task.estimated_duration_minutes} min` : 'N/A'}</TableCell>
                                     <TableCell>{task.is_active ? 'Yes' : 'No'}</TableCell>
+                                    <TableCell className="text-right space-x-2">
+                                        <Button variant="ghost" size="icon" onClick={() => handleOpenEditMasterTaskModal(task)} className="hover:text-primary">
+                                            <Edit className="h-4 w-4"/>
+                                        </Button>
+                                        <Button variant="ghost" size="icon" onClick={() => handleOpenDeleteMasterTaskDialog(task.id)} className="hover:text-destructive">
+                                            <Trash2 className="h-4 w-4"/>
+                                        </Button>
+                                    </TableCell>
                                 </TableRow>
                             ))}
                         </TableBody>
@@ -689,6 +792,40 @@ export default function PmsSchedulePage() {
             )}
         </CardContent>
       </Card>
+
+      {/* Add/Edit Master Task Modal */}
+      <MasterTaskFormModal 
+        isOpen={isAddMasterTaskModalOpen || isEditMasterTaskModalOpen}
+        onOpenChange={(open) => {
+            if (!open) {
+                setIsAddMasterTaskModalOpen(false);
+                setIsEditMasterTaskModalOpen(false);
+                setEditingMasterTask(null);
+                resetMasterTaskForm({is_active: true, frequency_unit: 'days', frequency_value:1, name: '', description: '', category: '', estimated_duration_minutes: undefined });
+            }
+        }}
+        currentTask={editingMasterTask}
+      />
+
+      {/* Delete Master Task Confirmation Dialog */}
+      <AlertDialog open={isDeleteMasterTaskConfirmOpen} onOpenChange={setIsDeleteMasterTaskConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Are you sure you want to delete this Master Task?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This action cannot be undone. This will permanently delete the master task
+              "{taskMasters.find(t => t.id === masterTaskToDeleteId)?.name || ''}". 
+              Associated schedule entries might be affected and may need manual cleanup.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setMasterTaskToDeleteId(null)}>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleConfirmDeleteMasterTask} className="bg-destructive hover:bg-destructive/90">
+              Delete Task
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
 
       <Dialog open={isCompleteModalOpen} onOpenChange={setIsCompleteModalOpen}>
@@ -726,5 +863,4 @@ export default function PmsSchedulePage() {
     </div>
   );
 }
-
     
