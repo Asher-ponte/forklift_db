@@ -7,12 +7,12 @@ import UnitHistory from '@/components/dashboard/UnitHistory';
 import DepartmentalDailyMetrics from '@/components/dashboard/DepartmentalDailyMetrics';
 import DepartmentMonthlyTrendChart from '@/components/dashboard/DepartmentMonthlyTrendChart';
 import UninspectedMHEsChart from '@/components/dashboard/UninspectedMHEsChart';
+import UninspectedMheUnitCodesChart from '@/components/dashboard/UninspectedMheUnitCodesChart';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth } from '@/context/AuthContext';
 import { Input } from '@/components/ui/input';
-import { CheckCircle, AlertTriangle, ScanLine, RotateCcw, Filter, CalendarDays, BarChartHorizontalBig } from 'lucide-react';
-import Link from 'next/link';
+import { CheckCircle, AlertTriangle, RotateCcw, Filter, CalendarDays, BarChartHorizontalBig } from 'lucide-react';
 import type { StoredInspectionReport, StoredDowntimeLog, Department, MheUnit } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { format, parseISO } from 'date-fns';
@@ -105,31 +105,33 @@ export default function DashboardPage() {
         }
       });
       
-      setStats(prevStats => ({
-        ...prevStats,
+      setStats({ // Set all stats at once
         totalInspectionsToday: todayReports.length,
         safeForkliftsToday: safeTodayCount,
         unsafeForkliftsToday: unsafeTodayCount,
-      }));
-      toast({ title: "Dashboard Loaded", description: "Data loaded from local storage.", duration: 3000 });
+      });
+      if (typeof window !== 'undefined') { // Prevent toast on server render if pre-rendering
+        toast({ title: "Dashboard Loaded", description: "Data loaded from local storage.", duration: 3000 });
+      }
 
     } catch (error) {
       console.error("Failed to load dashboard data from localStorage:", error);
-      toast({ title: "Dashboard Load Error", description: "Could not load data from local storage.", variant: "destructive" });
+      if (typeof window !== 'undefined') {
+        toast({ title: "Dashboard Load Error", description: "Could not load data from local storage.", variant: "destructive" });
+      }
       setAllReports([]);
       setAllDowntimeLogs([]);
       setDepartments([]);
       setMheUnits([]);
-      setStats(prevStats => ({
-        ...prevStats,
+      setStats({ // Reset stats on error
         totalInspectionsToday: 0,
         safeForkliftsToday: 0,
         unsafeForkliftsToday: 0,
-      }));
+      });
     } finally {
       setIsLoading(false);
     }
-  }, [toast, setIsLoading, setAllReports, setAllDowntimeLogs, setDepartments, setMheUnits, setStats]);
+  }, [toast]); // Dependencies for useCallback
 
   useEffect(() => {
     loadDashboardData();
@@ -235,15 +237,8 @@ export default function DashboardPage() {
         </Card>
       </div>
       
-      <DepartmentalDailyMetrics departments={departments} mheUnits={mheUnits} reports={allReports} isLoading={isLoading} />
-
-      <div className="flex justify-center py-6">
-        <Link href="/inspection" passHref>
-          <Button size="lg" className="bg-primary hover:bg-primary/90 text-primary-foreground shadow-md">
-            <ScanLine className="mr-2 h-5 w-5" />
-            Start New Inspection
-          </Button>
-        </Link>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <DepartmentalDailyMetrics departments={departments} mheUnits={mheUnits} reports={allReports} isLoading={isLoading} />
       </div>
 
       <Card className="shadow-md">
@@ -267,7 +262,7 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {departments.map(dept => (
           <DepartmentMonthlyTrendChart 
             key={dept.id} 
@@ -279,11 +274,20 @@ export default function DashboardPage() {
         ))}
       </div>
       
+      <UninspectedMheUnitCodesChart
+        departments={departments}
+        mheUnits={mheUnits}
+        reports={allReports}
+        filterStartDate={activeFilters.start}
+        filterEndDate={activeFilters.end}
+        isLoading={isLoading}
+      />
+      
       <div className="grid gap-6 md:grid-cols-1 lg:grid-cols-2 mt-6">
         <UninspectedMHEsChart 
             departments={departments} 
             mheUnits={mheUnits} 
-            reports={allReports} /* Pass allReports here; filtering logic is inside the component based on dates */
+            reports={allReports} 
             filterStartDate={activeFilters.start} 
             filterEndDate={activeFilters.end}
             isLoading={isLoading}
@@ -320,3 +324,4 @@ export default function DashboardPage() {
     </div>
   );
 }
+
