@@ -26,6 +26,7 @@ import {
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { v4 as uuidv4 } from 'uuid';
+import { isValid, parseISO } from 'date-fns';
 
 // --- LocalStorage Helper ---
 const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
@@ -124,17 +125,19 @@ export default function InspectionPage() {
       const storedMheUnits = getFromLocalStorage<MheUnit[]>(MHE_UNITS_KEY, []);
       setDepartments(storedDepartments);
       setMheUnits(storedMheUnits);
-      if (storedDepartments.length === 0) {
+      if (storedDepartments.length === 0 && typeof window !== 'undefined') { // Check window to prevent SSR toast
         toast({ title: "No Departments", description: "No departments found. Please configure them in Data Management.", variant: "default", duration: 5000 });
       }
     } catch (error) {
-      toast({ title: "Error Loading Setup Data", description: "Could not load departments or MHE units.", variant: "destructive" });
+      if (typeof window !== 'undefined') {
+        toast({ title: "Error Loading Setup Data", description: "Could not load departments or MHE units.", variant: "destructive" });
+      }
       setDepartments([]);
       setMheUnits([]);
     } finally {
       setIsLoadingInitialData(false);
     }
-  }, [toast]);
+  }, []); // Removed toast dependency, runs once on mount
 
   const filteredMHEs = useMemo(() => {
     if (!selectedDepartmentId) return [];
@@ -152,16 +155,18 @@ export default function InspectionPage() {
         setMasterChecklist(activeItems);
       } else {
         setMasterChecklist([]);
-        toast({
-          title: "No Checklist Items",
-          description: "No active inspection items found. Please configure them in Data Management. Inspection cannot proceed.",
-          variant: "destructive",
-          duration: 7000
-        });
+        if (typeof window !== 'undefined') {
+          toast({
+            title: "No Checklist Items",
+            description: "No active inspection items found. Please configure them in Data Management. Inspection cannot proceed.",
+            variant: "destructive",
+            duration: 7000
+          });
+        }
       }
       setIsLoadingChecklist(false);
     }
-  }, [isInspectionSetupConfirmed, toast]);
+  }, [isInspectionSetupConfirmed]); // Removed toast dependency
 
   const resetInspectionState = useCallback((resetSelections = false) => {
     const initialItems = masterChecklist.map(item => ({
@@ -185,7 +190,7 @@ export default function InspectionPage() {
       setIsInspectionSetupConfirmed(false);
       setMasterChecklist([]); 
     }
-  }, [masterChecklist, setPreviousReport]);
+  }, [masterChecklist]);
 
 
   useEffect(() => {
@@ -235,27 +240,39 @@ export default function InspectionPage() {
 
   // Load previous inspection report
   useEffect(() => {
-    if (selectedMheDetails?.unit_code && isInspectionSetupConfirmed) {
+    if (selectedMheDetails && selectedMheDetails.unit_code && isInspectionSetupConfirmed) {
+      const unitCode = selectedMheDetails.unit_code;
       setIsLoadingPreviousReport(true);
       setPreviousReport(null); 
       try {
         const allStoredReports = getFromLocalStorage<StoredInspectionReport[]>(REPORTS_STORAGE_KEY, []);
         const reportsForUnit = allStoredReports
-          .filter(report => report.unitId === selectedMheDetails.unit_code)
-          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+          .filter(report => report.unitId === unitCode)
+          .sort((a, b) => {
+            try {
+              const dateA = parseISO(a.date);
+              const dateB = parseISO(b.date);
+              if (!isValid(dateA) && !isValid(dateB)) return 0;
+              if (!isValid(dateA)) return 1; 
+              if (!isValid(dateB)) return -1;
+              return dateB.getTime() - dateA.getTime();
+            } catch (e) { return 0; }
+          });
         
         setPreviousReport(reportsForUnit.length > 0 ? reportsForUnit[0] : null);
       } catch (error) {
-        console.error("Error loading previous report:", error);
-        toast({ title: "Error Loading Previous Report", description: (error instanceof Error && error.message) || "Could not load data.", variant: "destructive" });
+        if (typeof window !== 'undefined') {
+          toast({ title: "Error Loading Previous Report", description: (error instanceof Error && error.message) || "Could not load data.", variant: "destructive" });
+        }
         setPreviousReport(null);
       } finally {
         setIsLoadingPreviousReport(false);
       }
     } else {
       setPreviousReport(null); 
+      if(isLoadingPreviousReport) setIsLoadingPreviousReport(false);
     }
-  }, [selectedMheDetails, isInspectionSetupConfirmed, toast]);
+  }, [selectedMheDetails, isInspectionSetupConfirmed]); // Removed toast dependency
 
   const handleStartInspectionSetup = () => {
     if (!selectedDepartmentId) {
@@ -272,6 +289,8 @@ export default function InspectionPage() {
   const handleDepartmentChange = (deptId: string) => {
     setSelectedDepartmentId(deptId);
     setSelectedMheId(''); 
+    setIsInspectionSetupConfirmed(false); // Reset setup confirmation when department changes
+    setPreviousReport(null); // Clear previous report immediately
   };
 
 
@@ -311,7 +330,7 @@ export default function InspectionPage() {
 
   const handleSubmitReport = async () => {
     if (!isInspectionComplete || !user || !selectedMheId || totalItemsCount === 0) {
-        if (totalItemsCount === 0) {
+        if (totalItemsCount === 0 && typeof window !== 'undefined') {
             toast({ title: "Cannot Submit", description: "No checklist items were available for this inspection.", variant: "destructive" });
         }
         return;
@@ -346,10 +365,12 @@ export default function InspectionPage() {
       allReports.push(newReport);
       saveToLocalStorage(REPORTS_STORAGE_KEY, allReports);
 
-      toast({
-        title: "Report Submitted",
-        description: `Inspection report for MHE ${newReport.unitId} has been saved to local storage.`,
-      });
+      if (typeof window !== 'undefined') {
+        toast({
+          title: "Report Submitted",
+          description: `Inspection report for MHE ${newReport.unitId} has been saved to local storage.`,
+        });
+      }
 
       if (newReport.status === 'Unsafe') {
         const unsafeItemsForDowntimeLog: DowntimeUnsafeItem[] = newReport.items
@@ -379,22 +400,26 @@ export default function InspectionPage() {
         const allDowntimeLogs = getFromLocalStorage<StoredDowntimeLog[]>(DOWNTIME_STORAGE_KEY, []);
         allDowntimeLogs.push(newDowntimeLogEntry);
         saveToLocalStorage(DOWNTIME_STORAGE_KEY, allDowntimeLogs);
-
-        toast({
-            title: "Downtime Logged Automatically",
-            description: `Unsafe unit ${newReport.unitId}. Downtime logged with ${unsafeItemsForDowntimeLog.length} unsafe item(s).`,
-            variant: "default"
-        });
+        
+        if (typeof window !== 'undefined') {
+          toast({
+              title: "Downtime Logged Automatically",
+              description: `Unsafe unit ${newReport.unitId}. Downtime logged with ${unsafeItemsForDowntimeLog.length} unsafe item(s).`,
+              variant: "default"
+          });
+        }
       }
       resetInspectionState(true); 
 
     } catch (error) {
       console.error("Error submitting report to localStorage:", error);
-      toast({
-        title: "Submission Error",
-        description: (error instanceof Error) ? error.message : "Could not save data to local storage.",
-        variant: "destructive",
-      });
+      if (typeof window !== 'undefined') {
+        toast({
+          title: "Submission Error",
+          description: (error instanceof Error) ? error.message : "Could not save data to local storage.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsSubmittingReport(false);
     }
@@ -541,11 +566,11 @@ export default function InspectionPage() {
                             <AccordionContent className="pt-4 space-y-3">
                                 <p><span className="font-semibold">Operator:</span> {previousReport.operator}</p>
                                 <p><span className="font-semibold">Report ID:</span> <span className="text-xs font-mono">{previousReport.id}</span></p>
-                                {previousReport.status === 'Unsafe' && previousReport.items.some(item => !item.is_safe) && (
+                                {previousReport.status === 'Unsafe' && previousReport.items.some(item => item.is_safe === false) && (
                                     <div>
                                         <h4 className="font-semibold text-destructive mb-1">Unsafe Items Noted:</h4>
                                         <ul className="list-disc list-inside pl-2 space-y-1 text-sm">
-                                            {previousReport.items.filter(item => !item.is_safe).map((item, index) => (
+                                            {previousReport.items.filter(item => item.is_safe === false).map((item, index) => (
                                                 <li key={`unsafe-${index}`}>
                                                     {item.part_name}
                                                     {item.remarks && <span className="text-muted-foreground"> - {item.remarks}</span>}
