@@ -105,25 +105,25 @@ export default function DashboardPage() {
         }
       });
       
-      setStats({ // Set all stats at once
+      setStats({ 
         totalInspectionsToday: todayReports.length,
         safeForkliftsToday: safeTodayCount,
         unsafeForkliftsToday: unsafeTodayCount,
       });
-      if (typeof window !== 'undefined') { // Prevent toast on server render if pre-rendering
-        toast({ title: "Dashboard Loaded", description: "Data loaded from local storage.", duration: 3000 });
+      if (typeof window !== 'undefined') { 
+        toast({ title: "Dashboard Loaded", description: "Data refreshed from local storage.", duration: 3000 });
       }
 
     } catch (error) {
       console.error("Failed to load dashboard data from localStorage:", error);
       if (typeof window !== 'undefined') {
-        toast({ title: "Dashboard Load Error", description: "Could not load data from local storage.", variant: "destructive" });
+        toast({ title: "Dashboard Load Error", description: "Could not load data.", variant: "destructive" });
       }
       setAllReports([]);
       setAllDowntimeLogs([]);
       setDepartments([]);
       setMheUnits([]);
-      setStats({ // Reset stats on error
+      setStats({
         totalInspectionsToday: 0,
         safeForkliftsToday: 0,
         unsafeForkliftsToday: 0,
@@ -131,13 +131,17 @@ export default function DashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [toast]); // Dependencies for useCallback
+  }, [toast, setIsLoading, setAllReports, setAllDowntimeLogs, setDepartments, setMheUnits, setStats]); 
 
   useEffect(() => {
     loadDashboardData();
   }, [loadDashboardData]);
 
   const handleApplyFilters = () => {
+    if (filterStartDate && filterEndDate && new Date(filterStartDate) > new Date(filterEndDate)) {
+        toast({ title: "Filter Error", description: "Start date cannot be after end date.", variant: "destructive", duration: 4000});
+        return;
+    }
     setActiveFilters({ start: filterStartDate || null, end: filterEndDate || null });
     toast({ title: "Filters Applied", description: "Graphs updated with selected date range.", duration: 3000});
   };
@@ -146,21 +150,20 @@ export default function DashboardPage() {
     setFilterStartDate('');
     setFilterEndDate('');
     setActiveFilters({ start: null, end: null });
-    toast({ title: "Filters Cleared", description: "Graphs showing all data.", duration: 3000});
+    toast({ title: "Filters Cleared", description: "Graphs showing default data (today for uninspected, all for trends/downtime unless specified by component).", duration: 4000});
   };
 
   const filteredReportsForCharts = useMemo(() => {
-    if (!activeFilters.start && !activeFilters.end) return allReports;
+    if (!activeFilters.start && !activeFilters.end) return allReports; // For monthly trends, allow all if no filter
     return allReports.filter(report => {
       try {
         const reportDate = parseISO(report.date);
         const start = activeFilters.start ? parseISO(activeFilters.start) : null;
         const end = activeFilters.end ? parseISO(activeFilters.end) : null;
         
-        if (start && reportDate < start) return false;
+        if (start && reportDate < startOfDay(start)) return false;
         if (end) {
-            const dayEnd = new Date(end); 
-            dayEnd.setHours(23, 59, 59, 999);
+            const dayEnd = endOfDay(end);
             if (reportDate > dayEnd) return false;
         }
         return true;
@@ -172,17 +175,16 @@ export default function DashboardPage() {
   }, [allReports, activeFilters]);
 
   const filteredDowntimeLogsForChart = useMemo(() => {
-    if (!activeFilters.start && !activeFilters.end) return allDowntimeLogs;
+    if (!activeFilters.start && !activeFilters.end) return allDowntimeLogs; // For downtime overview, allow all if no filter
     return allDowntimeLogs.filter(log => {
       try {
-        const logDate = parseISO(log.startTime);
+        const logDate = parseISO(log.startTime); // Assuming startTime determines relevance to period
         const start = activeFilters.start ? parseISO(activeFilters.start) : null;
         const end = activeFilters.end ? parseISO(activeFilters.end) : null;
 
-        if (start && logDate < start) return false;
+        if (start && logDate < startOfDay(start)) return false;
         if (end) {
-            const dayEnd = new Date(end);
-            dayEnd.setHours(23, 59, 59, 999);
+            const dayEnd = endOfDay(end);
             if (logDate > dayEnd) return false;
         }
         return true;
@@ -244,7 +246,7 @@ export default function DashboardPage() {
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle className="text-xl flex items-center"><Filter className="mr-2 h-5 w-5 text-primary"/>Chart Filters</CardTitle>
-          <CardDescription>Apply date range filters to the charts below (monthly trends, uninspected MHEs, downtime overview).</CardDescription>
+          <CardDescription>Apply date range filters to the charts below. Uninspected MHE charts default to today if no filter is set.</CardDescription>
         </CardHeader>
         <CardContent className="flex flex-col md:flex-row gap-4 items-end">
           <div className="flex-1">
@@ -277,7 +279,7 @@ export default function DashboardPage() {
       <UninspectedMheUnitCodesChart
         departments={departments}
         mheUnits={mheUnits}
-        reports={allReports}
+        reports={allReports} // Pass all reports, component will filter internally
         filterStartDate={activeFilters.start}
         filterEndDate={activeFilters.end}
         isLoading={isLoading}
@@ -287,7 +289,7 @@ export default function DashboardPage() {
         <UninspectedMHEsChart 
             departments={departments} 
             mheUnits={mheUnits} 
-            reports={allReports} 
+            reports={allReports} // Pass all reports, component will filter internally
             filterStartDate={activeFilters.start} 
             filterEndDate={activeFilters.end}
             isLoading={isLoading}
@@ -324,4 +326,3 @@ export default function DashboardPage() {
     </div>
   );
 }
-
