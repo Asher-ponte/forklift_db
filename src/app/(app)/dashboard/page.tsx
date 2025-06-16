@@ -15,7 +15,7 @@ import { CheckCircle, AlertTriangle, ScanLine, RotateCcw, Filter, CalendarDays, 
 import Link from 'next/link';
 import type { StoredInspectionReport, StoredDowntimeLog, Department, MheUnit } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
-import { format, startOfMonth, endOfMonth, parseISO } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 
 interface DashboardStats {
   totalInspectionsToday: number;
@@ -75,7 +75,6 @@ export default function DashboardPage() {
       setDepartments(fetchedDepartments);
       setMheUnits(fetchedMheUnits);
 
-      // Calculate Today's Stats (not affected by date filter)
       const today = new Date().toISOString().split('T')[0];
       const todayReports = fetchedReports.filter(report => {
         try {
@@ -130,7 +129,7 @@ export default function DashboardPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [toast]);
+  }, [toast, setIsLoading, setAllReports, setAllDowntimeLogs, setDepartments, setMheUnits, setStats]);
 
   useEffect(() => {
     loadDashboardData();
@@ -158,7 +157,7 @@ export default function DashboardPage() {
         
         if (start && reportDate < start) return false;
         if (end) {
-            const dayEnd = new Date(end); // To include the whole end day
+            const dayEnd = new Date(end); 
             dayEnd.setHours(23, 59, 59, 999);
             if (reportDate > dayEnd) return false;
         }
@@ -174,7 +173,7 @@ export default function DashboardPage() {
     if (!activeFilters.start && !activeFilters.end) return allDowntimeLogs;
     return allDowntimeLogs.filter(log => {
       try {
-        const logDate = parseISO(log.startTime); // Filter by log start time
+        const logDate = parseISO(log.startTime);
         const start = activeFilters.start ? parseISO(activeFilters.start) : null;
         const end = activeFilters.end ? parseISO(activeFilters.end) : null;
 
@@ -191,7 +190,6 @@ export default function DashboardPage() {
       }
     });
   }, [allDowntimeLogs, activeFilters]);
-
 
   return (
     <div className="space-y-8">
@@ -248,7 +246,6 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* Filters Section */}
       <Card className="shadow-md">
         <CardHeader>
           <CardTitle className="text-xl flex items-center"><Filter className="mr-2 h-5 w-5 text-primary"/>Chart Filters</CardTitle>
@@ -270,7 +267,6 @@ export default function DashboardPage() {
         </CardContent>
       </Card>
 
-      {/* Charts Section */}
       <div className="space-y-6">
         {departments.map(dept => (
           <DepartmentMonthlyTrendChart 
@@ -287,7 +283,7 @@ export default function DashboardPage() {
         <UninspectedMHEsChart 
             departments={departments} 
             mheUnits={mheUnits} 
-            reports={allReports} {/* Pass all reports for it to determine uninspected within its filter context */}
+            reports={allReports} /* Pass allReports here; filtering logic is inside the component based on dates */
             filterStartDate={activeFilters.start} 
             filterEndDate={activeFilters.end}
             isLoading={isLoading}
