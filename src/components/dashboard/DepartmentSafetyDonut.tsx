@@ -93,17 +93,19 @@ export default function DepartmentSafetyDonut({ department, mheUnitsInDept, repo
   
   const renderCustomizedLabel = ({ cx, cy, midAngle, innerRadius, outerRadius, percent, value, name }: any) => {
     const RADIAN = Math.PI / 180;
+    // Position the label slightly inside the outer edge of the slice
     const radius = innerRadius + (outerRadius - innerRadius) * 0.65; 
     const x = cx + radius * Math.cos(-midAngle * RADIAN);
     const y = cy + radius * Math.sin(-midAngle * RADIAN);
 
+    // Don't render label if value is 0 or slice is too small
     if (value === 0 || percent < 0.05) return null;
 
     return (
       <text
         x={x}
         y={y}
-        fill="hsl(var(--primary-foreground))"
+        fill="hsl(var(--primary-foreground))" // Use a color that contrasts well with segment colors (usually white)
         textAnchor="middle"
         dominantBaseline="central"
         fontSize="11px"
