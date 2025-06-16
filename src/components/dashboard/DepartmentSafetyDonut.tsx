@@ -63,11 +63,12 @@ export default function DepartmentSafetyDonut({ department, mheUnitsInDept, repo
     const totalMHEs = mheUnitsInDept.length;
     const notInspectedTodayCount = totalMHEs - inspectedTodayMheCodes.size;
 
+    // Ensure 'name' matches keys in chartConfig for correct legend labels
     const data = [
-      { name: 'Safe Today', value: safeTodayCount, fill: chartColors.safe },
-      { name: 'Unsafe Today', value: unsafeTodayCount, fill: chartColors.unsafe },
-      { name: 'Not Inspected Today', value: notInspectedTodayCount, fill: chartColors.notInspected },
-    ].filter(item => item.value >= 0); 
+      { name: 'safe', value: safeTodayCount, fill: chartColors.safe },
+      { name: 'unsafe', value: unsafeTodayCount, fill: chartColors.unsafe },
+      { name: 'notInspected', value: notInspectedTodayCount, fill: chartColors.notInspected },
+    ].filter(item => item.value >= 0);
 
     return { data, totalMHEs };
   }, [mheUnitsInDept, reports]);
@@ -84,7 +85,7 @@ export default function DepartmentSafetyDonut({ department, mheUnitsInDept, repo
             <div className="h-4 w-1/2 bg-muted rounded animate-pulse mt-1"></div>
           </CardDescription>
         </CardHeader>
-        <CardContent className="flex justify-center items-center h-[250px]">
+        <CardContent className="flex justify-center items-center h-[300px]"> {/* Increased height */}
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
         </CardContent>
       </Card>
@@ -105,7 +106,7 @@ export default function DepartmentSafetyDonut({ department, mheUnitsInDept, repo
       <text
         x={x}
         y={y}
-        fill="hsl(var(--primary-foreground))" // Use a color that contrasts well with segment colors (usually white)
+        fill="hsl(var(--primary-foreground))" 
         textAnchor="middle"
         dominantBaseline="central"
         fontSize="11px"
@@ -126,7 +127,7 @@ export default function DepartmentSafetyDonut({ department, mheUnitsInDept, repo
         </CardTitle>
         <CardDescription>Daily Safety Status</CardDescription>
       </CardHeader>
-      <CardContent className="h-[250px]">
+      <CardContent className="h-[300px]"> {/* Increased height */}
         {donutData.totalMHEs === 0 && !isLoading ? (
            <div className="flex justify-center items-center h-full">
             <p className="text-muted-foreground text-center text-sm">No active MHEs in this department.</p>
@@ -134,15 +135,15 @@ export default function DepartmentSafetyDonut({ department, mheUnitsInDept, repo
         ) : (
           <ChartContainer config={chartConfig} className="w-full h-full">
             <ResponsiveContainer width="100%" height="100%">
-              <PieChart margin={{ top: 5, right: 5, bottom: 30, left: 5 }}> {/* Adjusted bottom margin for legend */}
+              <PieChart margin={{ top: 5, right: 5, bottom: 30, left: 5 }}>
                 <ChartTooltip
                   cursor={true}
-                  content={<ChartTooltipContent nameKey="name" />}
+                  content={<ChartTooltipContent nameKey="name" />} // nameKey "name" will now refer to 'safe', 'unsafe', etc.
                 />
                 <Pie
                   data={donutData.data}
                   dataKey="value"
-                  nameKey="name"
+                  nameKey="name" // This nameKey points to the 'name' property in donutData.data items
                   cx="50%"
                   cy="50%"
                   innerRadius="55%" 
@@ -174,7 +175,7 @@ export default function DepartmentSafetyDonut({ department, mheUnitsInDept, repo
                   />
                 </Pie>
                 <ChartLegend 
-                  content={<ChartLegendContent nameKey="name" className="text-xs"/>} 
+                  content={<ChartLegendContent nameKey="name" className="text-xs"/>} // nameKey "name" will use 'safe', 'unsafe', etc. to lookup labels in chartConfig
                   verticalAlign="bottom" 
                   wrapperStyle={{paddingTop: '10px'}}
                 />
