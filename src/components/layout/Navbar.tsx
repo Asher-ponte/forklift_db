@@ -16,7 +16,7 @@ const allNavItems = [
   { href: '/report', label: 'Forklift Report', icon: FileText, roles: ['operator', 'supervisor'] },
   { href: '/downtime', label: 'Downtime Log', icon: Clock, roles: ['operator', 'supervisor'] },
   { href: '/data-management', label: 'Data Management', icon: Database, roles: ['supervisor'] },
-  { href: '/pms-schedule', label: 'PMS Schedule', icon: CalendarCheck, roles: ['operator', 'supervisor'] },
+  { href: '/pms-schedule', label: 'PMS Schedule', icon: CalendarCheck, roles: ['supervisor'] },
   { href: '/tools', label: 'Tools', icon: Wrench, roles: ['operator', 'supervisor'] },
 ];
 
