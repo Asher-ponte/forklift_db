@@ -13,12 +13,12 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { CalendarCheck, CheckSquare, Filter, ListFilter, Loader2, PlusCircle, RefreshCw, Settings2, AlertTriangle, Edit, Trash2 } from 'lucide-react';
+import { CalendarCheck, CheckSquare, Filter, ListFilter, Loader2, PlusCircle, RefreshCw, Settings2, AlertTriangle, Edit, Trash2, ListChecks, CalendarClock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import type { MheUnit, StoredPmsTaskMaster, StoredPmsScheduleEntry, PmsScheduleDisplayEntry } from '@/lib/types';
 import { v4 as uuidv4 } from 'uuid';
-import { format, parseISO, addDays, addWeeks, addMonths, isValid } from 'date-fns';
+import { format, parseISO, addDays, addWeeks, addMonths, isValid, isFuture, differenceInDays } from 'date-fns';
 import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
@@ -81,6 +81,11 @@ const pmsScheduleEntrySchema = z.object({
 });
 type PmsScheduleEntryFormData = z.infer<typeof pmsScheduleEntrySchema>;
 
+interface PmsDashboardStats {
+  totalPending: number;
+  totalOverdue: number;
+  totalUpcomingNext7Days: number;
+}
 
 export default function PmsSchedulePage() {
   const { user } = useAuth();
@@ -201,6 +206,35 @@ export default function PmsSchedulePage() {
     loadAllData();
   }, [fetchMheUnitsCallback, fetchTaskMastersCallback, fetchScheduleEntriesCallback, toast]);
 
+  const pmsStats = useMemo<PmsDashboardStats>(() => {
+    const today = new Date();
+    const sevenDaysFromNow = addDays(today, 7);
+    
+    let pendingCount = 0;
+    let overdueCount = 0;
+    let upcomingCount = 0;
+
+    scheduleEntries.forEach(entry => {
+      if (entry.status === 'Pending' || entry.status === 'In Progress') {
+        pendingCount++;
+        try {
+          const dueDate = parseISO(entry.due_date);
+          if (isValid(dueDate) && isFuture(dueDate) && differenceInDays(dueDate, today) <= 7) {
+            upcomingCount++;
+          }
+        } catch (e) { /* ignore parse errors for this calculation */ }
+      }
+      if (entry.status === 'Overdue') {
+        overdueCount++;
+      }
+    });
+
+    return {
+      totalPending: pendingCount,
+      totalOverdue: overdueCount,
+      totalUpcomingNext7Days: upcomingCount,
+    };
+  }, [scheduleEntries]);
 
   const displayedScheduleEntries = useMemo(() => {
     return scheduleEntries
@@ -431,14 +465,12 @@ export default function PmsSchedulePage() {
             toast({
                 title: "Warning: Task In Use",
                 description: `The deleted master task "${taskToDelete?.name}" was used in some schedule entries. These entries might be affected and may require manual review or cleanup.`,
-                variant: "default", // Use default variant for warning, not destructive
+                variant: "default", 
                 duration: 7000
             });
         }
 
         fetchTaskMastersCallback();
-        // Optionally, refresh schedule entries too if orphaned entries should be handled/hidden immediately
-        // fetchScheduleEntriesCallback(); 
     } catch (error) {
         toast({ title: "Error Deleting Master Task", description: (error instanceof Error) ? error.message : "Could not delete master task.", variant: "destructive" });
     } finally {
@@ -469,7 +501,9 @@ export default function PmsSchedulePage() {
     }
   }
 
-  if (isLoading && (isDataLoading.mhe || isDataLoading.tasks || isDataLoading.schedules)) {
+  const overallLoading = isLoading && (isDataLoading.mhe || isDataLoading.tasks || isDataLoading.schedules);
+
+  if (overallLoading && scheduleEntries.length === 0) { // Only show full page loader if no data is available yet
     return (
       <div className="flex h-[calc(100vh-200px)] items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
@@ -564,6 +598,39 @@ export default function PmsSchedulePage() {
           </CardDescription>
         </CardHeader>
       </Card>
+
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <Card className="shadow-md hover:shadow-lg transition-shadow">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Pending/In Progress</CardTitle>
+            <ListChecks className="h-5 w-5 text-blue-500" />
+          </CardHeader>
+          <CardContent>
+            {isDataLoading.schedules ? <div className="text-2xl font-bold animate-pulse">--</div> : <div className="text-2xl font-bold">{pmsStats.totalPending}</div>}
+            <p className="text-xs text-muted-foreground">Tasks awaiting action</p>
+          </CardContent>
+        </Card>
+        <Card className="shadow-md hover:shadow-lg transition-shadow">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Overdue Tasks</CardTitle>
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+          </CardHeader>
+          <CardContent>
+            {isDataLoading.schedules ? <div className="text-2xl font-bold animate-pulse">--</div> : <div className="text-2xl font-bold">{pmsStats.totalOverdue}</div>}
+             <p className="text-xs text-muted-foreground">Tasks past their due date</p>
+          </CardContent>
+        </Card>
+        <Card className="shadow-md hover:shadow-lg transition-shadow">
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Upcoming (Next 7 Days)</CardTitle>
+            <CalendarClock className="h-5 w-5 text-green-500" />
+          </CardHeader>
+          <CardContent>
+             {isDataLoading.schedules ? <div className="text-2xl font-bold animate-pulse">--</div> : <div className="text-2xl font-bold">{pmsStats.totalUpcomingNext7Days}</div>}
+            <p className="text-xs text-muted-foreground">Pending tasks due soon</p>
+          </CardContent>
+        </Card>
+      </div>
 
       <Card>
         <CardHeader className="flex flex-row justify-between items-center">
@@ -686,7 +753,7 @@ export default function PmsSchedulePage() {
           </Dialog>
         </CardHeader>
         <CardContent>
-          {isDataLoading.schedules || isDataLoading.mhe || isDataLoading.tasks ? (
+          {isDataLoading.schedules || isDataLoading.mhe || isDataLoading.tasks && displayedScheduleEntries.length === 0 ? (
             <div className="flex justify-center items-center py-10"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>
           ) : mheUnits.length === 0 ? (
             <p className="text-muted-foreground text-center py-6">No MHE units defined. Please add MHE units in Data Management first.</p>
@@ -751,7 +818,7 @@ export default function PmsSchedulePage() {
             </Button>
         </CardHeader>
         <CardContent>
-            {isDataLoading.tasks ? (
+            {isDataLoading.tasks && taskMasters.length === 0 ? (
                 <div className="flex justify-center items-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
             ) : taskMasters.length === 0 ? (
                 <p className="text-muted-foreground text-center py-6">No Master PMS Tasks defined yet. Click "Add Master Task" to create one.</p>
