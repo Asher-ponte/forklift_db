@@ -326,7 +326,7 @@ export default function ReportPage() {
           <Accordion type="multiple" className="w-full">
             {filteredData.map((report) => (
               <AccordionItem value={report.id} key={report.id} className="border-b last:border-b-0">
-                 <AccordionTrigger className="hover:bg-muted/50 w-full p-0 data-[state=open]:bg-muted/50 focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-offset-1 focus-visible:ring-offset-background">
+                 <AccordionTrigger className="hover:bg-muted/50 w-full p-0 data-[state=open]:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
                   <div className="flex flex-col md:flex-row flex-1 items-start md:items-center space-y-1 md:space-y-0 md:space-x-4 px-4 py-3 w-full text-left">
                     <div className="font-medium w-full md:w-[20%] truncate">
                       <span className="md:hidden font-semibold text-xs text-muted-foreground">Unit: </span>{report.unitId}
@@ -510,3 +510,4 @@ export default function ReportPage() {
 }
 
     
+
