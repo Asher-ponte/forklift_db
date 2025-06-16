@@ -10,12 +10,12 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { RefreshCw, ListChecks, CheckSquare, Edit, Eye, ExternalLink, ImageOff } from 'lucide-react';
+import { RefreshCw, ListChecks, CheckSquare, Edit, Eye, ExternalLink, ImageOff, PlusCircle, History } from 'lucide-react';
 import type { StoredDowntimeLog, DowntimeUnsafeItem } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import Image from 'next/image';
-import Link from 'next/link'; // Import NextLink for internal navigation if needed, use <a> for external
 import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs';
 
@@ -40,6 +40,7 @@ export default function DowntimePage() {
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedLogForDetails, setSelectedLogForDetails] = useState<StoredDowntimeLog | null>(null);
   const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState("viewLogs");
 
   const loadDowntimeLogs = useCallback(async () => {
     setIsLoading(true);
@@ -50,7 +51,7 @@ export default function DowntimePage() {
         log && typeof log.id === 'string' && typeof log.unitId === 'string' &&
         typeof log.reason === 'string' && typeof log.startTime === 'string' &&
         typeof log.loggedAt === 'string' && (log.endTime === null || typeof log.endTime === 'string' || typeof log.endTime === 'undefined') &&
-        (log.unsafeItems === undefined || Array.isArray(log.unsafeItems)) // Validate new field
+        (log.unsafeItems === undefined || Array.isArray(log.unsafeItems)) 
       ).sort((a, b) => {
           let dateAVal: number, dateBVal: number;
           try { dateAVal = new Date(a.loggedAt).getTime(); } catch { dateAVal = NaN; }
@@ -162,76 +163,96 @@ export default function DowntimePage() {
 
   const isClickablePhoto = (url: string | null | undefined) => url && url !== PLACEHOLDER_IMAGE_DATA_URL && !url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP");
 
+  const handleLogAdded = () => {
+    loadDowntimeLogs();
+    setActiveTab("viewLogs"); // Switch to view logs tab after adding a new log
+  }
+
   return (
     <div className="space-y-8">
-      <DowntimeForm onLogAdded={loadDowntimeLogs} />
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <TabsList className="grid w-full grid-cols-2 mb-6">
+          <TabsTrigger value="logNew" className="py-2.5 text-sm">
+             <PlusCircle className="mr-2 h-5 w-5"/> Log New Downtime
+          </TabsTrigger>
+          <TabsTrigger value="viewLogs" className="py-2.5 text-sm">
+            <History className="mr-2 h-5 w-5"/> View Downtime Logs
+          </TabsTrigger>
+        </TabsList>
 
-      <Card className="shadow-lg">
-        <CardHeader className="flex flex-row justify-between items-center">
-          <div>
-            <CardTitle className="font-headline text-2xl flex items-center">
-              <ListChecks className="mr-3 h-7 w-7 text-primary" />
-              Recent Downtime Logs
-            </CardTitle>
-            <CardDescription>List of all recorded forklift downtime incidents from local storage. Set end times to mark repairs as complete. View details for inspection-generated logs.</CardDescription>
-          </div>
-          <Button onClick={loadDowntimeLogs} variant="outline" size="sm" disabled={isLoading}>
-            <RefreshCw className="mr-2 h-4 w-4" /> {isLoading ? "Refreshing..." : "Refresh Logs"}
-          </Button>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <p className="text-center py-4">Loading downtime logs from local storage...</p>
-          ) : downtimeLogs.length === 0 ? (
-            <p className="text-muted-foreground text-center py-4">No downtime logs recorded locally yet.</p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Unit ID</TableHead>
-                  <TableHead className="min-w-[200px]">Reason</TableHead>
-                  <TableHead>Start Time</TableHead>
-                  <TableHead>End Time</TableHead>
-                  <TableHead>Logged At</TableHead>
-                  <TableHead className="text-center">Details</TableHead>
-                  <TableHead className="text-right">Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {downtimeLogs.map((log) => (
-                  <TableRow key={log.id}>
-                    <TableCell className="font-medium">{log.unitId}</TableCell>
-                    <TableCell>{log.reason}</TableCell>
-                    <TableCell>{formatDateTime(log.startTime)}</TableCell>
-                    <TableCell>{formatDateTime(log.endTime)}</TableCell>
-                    <TableCell>{formatDateTime(log.loggedAt)}</TableCell>
-                    <TableCell className="text-center">
-                      {log.unsafeItems && log.unsafeItems.length > 0 ? (
-                        <Button variant="ghost" size="sm" onClick={() => handleOpenDetailsModal(log)}>
-                          <Eye className="mr-1 h-4 w-4" /> View
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground italic">N/A</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {!log.endTime ? (
-                        <Button variant="outline" size="sm" onClick={() => handleOpenEditEndTimeModal(log)}>
-                          <Edit className="mr-2 h-4 w-4" /> Set End Time
-                        </Button>
-                      ) : (
-                        <Badge variant="secondary" className="bg-green-100 text-green-700 border-green-300">
-                           <CheckSquare className="mr-1 h-4 w-4"/> Completed
-                        </Badge>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </CardContent>
-      </Card>
+        <TabsContent value="logNew">
+          <DowntimeForm onLogAdded={handleLogAdded} />
+        </TabsContent>
+
+        <TabsContent value="viewLogs">
+          <Card className="shadow-lg">
+            <CardHeader className="flex flex-row justify-between items-center">
+              <div>
+                <CardTitle className="font-headline text-2xl flex items-center">
+                  <ListChecks className="mr-3 h-7 w-7 text-primary" />
+                  Recent Downtime Logs
+                </CardTitle>
+                <CardDescription>List of all recorded forklift downtime incidents from local storage. Set end times to mark repairs as complete. View details for inspection-generated logs.</CardDescription>
+              </div>
+              <Button onClick={loadDowntimeLogs} variant="outline" size="sm" disabled={isLoading}>
+                <RefreshCw className="mr-2 h-4 w-4" /> {isLoading ? "Refreshing..." : "Refresh Logs"}
+              </Button>
+            </CardHeader>
+            <CardContent>
+              {isLoading ? (
+                <p className="text-center py-4">Loading downtime logs from local storage...</p>
+              ) : downtimeLogs.length === 0 ? (
+                <p className="text-muted-foreground text-center py-4">No downtime logs recorded locally yet.</p>
+              ) : (
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Unit ID</TableHead>
+                      <TableHead className="min-w-[200px]">Reason</TableHead>
+                      <TableHead>Start Time</TableHead>
+                      <TableHead>End Time</TableHead>
+                      <TableHead>Logged At</TableHead>
+                      <TableHead className="text-center">Details</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {downtimeLogs.map((log) => (
+                      <TableRow key={log.id}>
+                        <TableCell className="font-medium">{log.unitId}</TableCell>
+                        <TableCell>{log.reason}</TableCell>
+                        <TableCell>{formatDateTime(log.startTime)}</TableCell>
+                        <TableCell>{formatDateTime(log.endTime)}</TableCell>
+                        <TableCell>{formatDateTime(log.loggedAt)}</TableCell>
+                        <TableCell className="text-center">
+                          {log.unsafeItems && log.unsafeItems.length > 0 ? (
+                            <Button variant="ghost" size="sm" onClick={() => handleOpenDetailsModal(log)}>
+                              <Eye className="mr-1 h-4 w-4" /> View
+                            </Button>
+                          ) : (
+                            <span className="text-xs text-muted-foreground italic">N/A</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          {!log.endTime ? (
+                            <Button variant="outline" size="sm" onClick={() => handleOpenEditEndTimeModal(log)}>
+                              <Edit className="mr-2 h-4 w-4" /> Set End Time
+                            </Button>
+                          ) : (
+                            <Badge variant="secondary" className="bg-green-100 text-green-700 border-green-300">
+                               <CheckSquare className="mr-1 h-4 w-4"/> Completed
+                            </Badge>
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       {/* Edit End Time Modal */}
       <Dialog open={isEndTimeModalOpen} onOpenChange={setIsEndTimeModalOpen}>
