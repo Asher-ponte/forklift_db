@@ -125,7 +125,7 @@ export default function InspectionPage() {
       const storedMheUnits = getFromLocalStorage<MheUnit[]>(MHE_UNITS_KEY, []);
       setDepartments(storedDepartments);
       setMheUnits(storedMheUnits);
-      if (storedDepartments.length === 0 && typeof window !== 'undefined') { // Check window to prevent SSR toast
+      if (storedDepartments.length === 0 && typeof window !== 'undefined') {
         toast({ title: "No Departments", description: "No departments found. Please configure them in Data Management.", variant: "default", duration: 5000 });
       }
     } catch (error) {
@@ -137,7 +137,7 @@ export default function InspectionPage() {
     } finally {
       setIsLoadingInitialData(false);
     }
-  }, []); // Removed toast dependency, runs once on mount
+  }, []); 
 
   const filteredMHEs = useMemo(() => {
     if (!selectedDepartmentId) return [];
@@ -166,7 +166,7 @@ export default function InspectionPage() {
       }
       setIsLoadingChecklist(false);
     }
-  }, [isInspectionSetupConfirmed]); // Removed toast dependency
+  }, [isInspectionSetupConfirmed]);
 
   const resetInspectionState = useCallback((resetSelections = false) => {
     const initialItems = masterChecklist.map(item => ({
@@ -183,7 +183,7 @@ export default function InspectionPage() {
     setCurrentItemIdToInspect(initialItems.length > 0 ? initialItems[0].checklistItemId : null);
     setShowUnsafeWarningDialog(false);
     setIsSubmittingReport(false);
-    setPreviousReport(null); 
+    // Do NOT setPreviousReport(null) here; it's handled by its own effect.
     if (resetSelections) {
       setSelectedDepartmentId('');
       setSelectedMheId('');
@@ -272,7 +272,7 @@ export default function InspectionPage() {
       setPreviousReport(null); 
       if(isLoadingPreviousReport) setIsLoadingPreviousReport(false);
     }
-  }, [selectedMheDetails, isInspectionSetupConfirmed]); // Removed toast dependency
+  }, [selectedMheDetails, isInspectionSetupConfirmed, toast]); 
 
   const handleStartInspectionSetup = () => {
     if (!selectedDepartmentId) {
@@ -289,8 +289,8 @@ export default function InspectionPage() {
   const handleDepartmentChange = (deptId: string) => {
     setSelectedDepartmentId(deptId);
     setSelectedMheId(''); 
-    setIsInspectionSetupConfirmed(false); // Reset setup confirmation when department changes
-    setPreviousReport(null); // Clear previous report immediately
+    setIsInspectionSetupConfirmed(false); 
+    setPreviousReport(null); 
   };
 
 
@@ -353,7 +353,7 @@ export default function InspectionPage() {
 
     const newReport: StoredInspectionReport = {
       id: reportId,
-      unitId: selectedMheDetails?.unit_code || selectedMheId, // Prefer unit_code for report
+      unitId: selectedMheDetails?.unit_code || selectedMheId, 
       date: reportDate,
       operator: user.username,
       status: overallStatus,
@@ -394,7 +394,7 @@ export default function InspectionPage() {
           endTime: null,
           loggedAt: reportDate,
           unsafeItems: unsafeItemsForDowntimeLog.length > 0 ? unsafeItemsForDowntimeLog : undefined,
-          sourceReportId: newReport.id, // Link to the source inspection report
+          sourceReportId: newReport.id, 
         };
         
         const allDowntimeLogs = getFromLocalStorage<StoredDowntimeLog[]>(DOWNTIME_STORAGE_KEY, []);
@@ -736,3 +736,4 @@ export default function InspectionPage() {
     </div>
   );
 }
+
