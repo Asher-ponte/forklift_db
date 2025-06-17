@@ -1,6 +1,6 @@
 
 // src/services/apiService.ts
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL;
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_KEY;
 
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -27,7 +27,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
         if (text.length > 0) {
             console.warn("API success response was not JSON:", text);
             // Depending on expectations, you might want to return text here
-            // For now, if it's not JSON and not 204, it's unexpected for this app's design
+            // For this app's design, if it's not JSON and not 204, it's unexpected
         }
         return undefined as unknown as T; // Or handle as plain text if appropriate
     });
@@ -36,8 +36,9 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   if (!API_BASE_URL) {
-    console.error("API_BASE_URL is not defined. Please check your environment variable NEXT_PUBLIC_API_BASE_URL.");
-    throw new Error("API_BASE_URL is not defined. Please check your environment variables.");
+    const errorMessage = "API_BASE_URL is not defined. Please check your environment variable NEXT_PUBLIC_API_KEY.";
+    console.error(errorMessage);
+    throw new Error(errorMessage);
   }
   const url = `${API_BASE_URL}${endpoint}`;
   try {
@@ -51,23 +52,19 @@ async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
     });
     return handleResponse<T>(response);
   } catch (error) {
-    // This catch block will handle network errors (e.g., server down, DNS issues, CORS blocked by browser before response)
-    // or errors thrown by handleResponse if response.ok is false.
-    
     let errorMessage = `API request to ${url} failed.`;
 
-    if (error instanceof TypeError && error.message.toLowerCase().includes("failed to fetch")) {
-        // This specific error often means network issue, server down, or CORS
-        errorMessage += 
+    if (error instanceof TypeError && (error.message.toLowerCase().includes("failed to fetch") || error.message.toLowerCase().includes("networkerror"))) {
+        errorMessage +=
             ` This often indicates a network issue, the API server at ${API_BASE_URL} is not running/accessible, ` +
-            `or CORS is not configured correctly on the server to accept requests from this origin.`;
+            `or CORS is not configured correctly on the server to accept requests from this origin. Please check your API server and network configuration.`;
     } else if (error instanceof Error) {
         errorMessage += ` Details: ${error.message}`;
     } else {
         errorMessage += ` An unknown error occurred.`;
     }
-    console.error(errorMessage, error); // Log the full error for debugging
-    throw new Error(errorMessage); // Re-throw a more informative error for the UI/toast
+    console.error(errorMessage, error); 
+    throw new Error(errorMessage); 
   }
 }
 
