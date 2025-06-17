@@ -23,20 +23,22 @@ async function handleResponse<T>(response: Response): Promise<T> {
     return response.json() as Promise<T>;
   } else {
     // Handle non-JSON success responses by returning the text or undefined if empty
-    return response.text().then(text => {
-        if (text.length > 0) {
-            console.warn("API success response was not JSON:", text);
-            // Depending on expectations, you might want to return text here
-            // For this app's design, if it's not JSON and not 204, it's unexpected
-        }
-        return undefined as unknown as T; // Or handle as plain text if appropriate
-    });
+    const text = await response.text();
+    if (text.length > 0) {
+        console.warn("API success response was not JSON:", text);
+        // Depending on expectations, you might want to return text here
+        // For this app's design, if it's not JSON and not 204, it's unexpected for most endpoints.
+        // Consider if any of your GET endpoints might return plain text intentionally.
+    }
+    // If you expect plain text for some successful GETs, you might need to adjust this.
+    // Otherwise, for an API that's supposed to return JSON or 204, this is an anomaly.
+    return undefined as unknown as T;
   }
 }
 
 async function request<T>(endpoint: string, options?: RequestInit): Promise<T> {
   if (!API_BASE_URL) {
-    const errorMessage = "API_BASE_URL is not defined. Please check your environment variable NEXT_PUBLIC_API_KEY.";
+    const errorMessage = "API_BASE_URL (NEXT_PUBLIC_API_KEY) is not defined. Please check your .env.local file and ensure the Next.js development server was restarted after changes.";
     console.error(errorMessage);
     throw new Error(errorMessage);
   }
