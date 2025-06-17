@@ -6,13 +6,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { FileText, Download, Filter, RefreshCw, CheckCircle, AlertCircle, ImageOff, MessageSquare, ZoomIn, Trash2, Edit } from "lucide-react";
+import { FileText, Download, Filter, RefreshCw, CheckCircle, AlertCircle, ImageOff, MessageSquare, ZoomIn, Trash2, Edit, Loader2 } from "lucide-react";
 import Image from 'next/image';
 import { useState, useMemo, useEffect, useCallback } from "react";
-import type { StoredInspectionReport } from '@/lib/types';
-import type { InspectionRecordClientState } from '@/lib/mock-data';
+import type { StoredInspectionReport, InspectionReportItem as ApiReportItem, StoredDowntimeLog } from '@/lib/types';
 import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
-import ImageModal from '@/components/shared/ImageModal'; // Import the new modal
+import ImageModal from '@/components/shared/ImageModal';
 import {
   Accordion,
   AccordionContent,
@@ -31,45 +30,20 @@ import {
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
+import * as apiService from '@/services/apiService';
+import { parseISO } from "date-fns";
 
-interface ReportDisplayEntry {
-  id: string;
-  unitId: string;
-  date: string;
-  operator: string;
-  status: 'Safe' | 'Unsafe';
+
+interface ReportDisplayEntry extends StoredInspectionReport {
   representativePhotoUrl: string;
   representativeDataAiHint: string;
   rawDate: Date;
-  items: InspectionRecordClientState[];
+  // items are already part of StoredInspectionReport
 }
 
-const REPORTS_STORAGE_KEY = 'forkliftInspectionReports';
-const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs';
-
-
-const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
-  if (typeof window === 'undefined') return defaultValue;
-  const item = localStorage.getItem(key);
-  if (item) {
-    try {
-      return JSON.parse(item) as T;
-    } catch (e) {
-      console.warn(`Error parsing localStorage item ${key}:`, e);
-      return defaultValue;
-    }
-  }
-  return defaultValue;
-};
-
-const saveToLocalStorage = <T>(key: string, value: T): void => {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.error(`Error saving to localStorage item ${key}:`, e);
-  }
-};
+const isClickablePhoto = (url: string | null | undefined): url is string => {
+  return !!(url && url !== PLACEHOLDER_IMAGE_DATA_URL && !url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP"));
+}
 
 export default function ReportPage() {
   const [allReports, setAllReports] = useState<ReportDisplayEntry[]>([]);
@@ -84,22 +58,21 @@ export default function ReportPage() {
   const [selectedImageUrl, setSelectedImageUrl] = useState<string | null>(null);
   const [selectedImageAlt, setSelectedImageAlt] = useState<string>("Enlarged view");
 
-
   const openImageModal = (url: string, alt: string) => {
     setSelectedImageUrl(url);
     setSelectedImageAlt(alt);
     setIsImageModalOpen(true);
   };
 
-  const processReportsToDisplayEntries = (reportsFromStorage: StoredInspectionReport[]): ReportDisplayEntry[] => {
-    return reportsFromStorage.map(report => {
+  const processReportsToDisplayEntries = (reportsFromApi: StoredInspectionReport[]): ReportDisplayEntry[] => {
+    return reportsFromApi.map(report => {
       let representativePhoto = PLACEHOLDER_IMAGE_DATA_URL;
       let hint = 'forklift general';
       if (report.status === 'Unsafe') {
         const unsafeItemWithPhoto = report.items?.find(item => !item.is_safe && item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL);
         if (unsafeItemWithPhoto) {
           representativePhoto = unsafeItemWithPhoto.photo_url!;
-          hint = unsafeItemWithPhoto.part_name;
+          hint = unsafeItemWithPhoto.part_name_snapshot;
         } else {
            const firstItemWithPhoto = report.items?.find(item => item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL);
            if(firstItemWithPhoto) representativePhoto = firstItemWithPhoto.photo_url!;
@@ -109,19 +82,15 @@ export default function ReportPage() {
         const firstItemWithPhoto = report.items?.find(item => item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL);
         if(firstItemWithPhoto) {
           representativePhoto = firstItemWithPhoto.photo_url!;
-          hint = firstItemWithPhoto.part_name;
+          hint = firstItemWithPhoto.part_name_snapshot;
         }
       }
       return {
-        id: report.id,
-        unitId: report.unitId,
-        date: new Date(report.date).toLocaleString(),
-        operator: report.operator,
-        status: report.status,
+        ...report, // Spread the original report
+        // date is already a string from API, formatted below for display
         representativePhotoUrl: representativePhoto,
         representativeDataAiHint: hint.substring(0,50),
-        rawDate: new Date(report.date),
-        items: report.items || [],
+        rawDate: parseISO(report.date), // Keep raw date for sorting
       };
     }).sort((a, b) => b.rawDate.getTime() - a.rawDate.getTime());
   };
@@ -129,38 +98,29 @@ export default function ReportPage() {
   const loadReports = useCallback(async () => {
     setIsLoading(true);
     try {
-      let reportsFromStorage = getFromLocalStorage<StoredInspectionReport[]>(REPORTS_STORAGE_KEY, []);
-      
-      setAllReports(processReportsToDisplayEntries(reportsFromStorage));
-      if (typeof window !== 'undefined') {
-        toast({ title: "Reports Loaded", description: "Data loaded from local storage.", duration: 3000 });
-      }
+      const reportsFromApi = await apiService.fetchInspectionReports();
+      setAllReports(processReportsToDisplayEntries(reportsFromApi));
+      toast({ title: "Reports Loaded", description: "Data loaded from API.", duration: 3000 });
     } catch (error) {
-      console.error("Failed to fetch reports from localStorage:", error);
-      if (typeof window !== 'undefined') {
-        toast({ title: "Error Loading Reports", description: (error instanceof Error) ? error.message : "Could not fetch reports from local storage.", variant: "destructive" });
-      }
+      console.error("Failed to fetch reports from API:", error);
+      toast({ title: "Error Loading Reports", description: (error instanceof Error) ? error.message : "Could not fetch reports from API.", variant: "destructive" });
       setAllReports([]);
     } finally {
       setIsLoading(false);
     }
   }, [toast]);
 
-
   useEffect(() => {
     loadReports();
   }, [loadReports]);
 
-
   const filteredData = useMemo(() => {
     return allReports.filter(report => {
-      const unitIdMatch = filterUnitId ? report.unitId.toLowerCase().includes(filterUnitId.toLowerCase()) : true;
-      
+      const unitIdMatch = filterUnitId ? report.unit_code_display.toLowerCase().includes(filterUnitId.toLowerCase()) : true;
       let dateMatch = true;
       if (filterDateRange.from || filterDateRange.to) {
         const reportDateOnly = new Date(report.rawDate);
         reportDateOnly.setHours(0,0,0,0);
-
         if (filterDateRange.from) {
           const fromDate = new Date(filterDateRange.from);
           fromDate.setHours(0,0,0,0); 
@@ -176,33 +136,32 @@ export default function ReportPage() {
     });
   }, [allReports, filterUnitId, filterDateRange.from, filterDateRange.to]);
 
-
   const handleExportCsv = () => {
-    const headers = ["Inspection ID", "Unit ID", "Date", "Operator", "Overall Status", "Checklist Item", "Item Status", "Item Timestamp", "Remarks", "Photo URL"];
+    const headers = ["Inspection ID", "Unit ID", "Date", "Operator", "Overall Status", "Checklist Item", "Item Status", "Item Timestamp", "Remarks", "Photo URL (Data URI omitted for brevity)"];
     const csvRows: string[] = [headers.join(',')];
 
     filteredData.forEach(report => {
       (report.items || []).forEach(item => {
         const row = [
           report.id,
-          report.unitId,
-          report.date,
-          report.operator,
+          report.unit_code_display,
+          new Date(report.date).toLocaleString(),
+          report.operator_username,
           report.status,
-          item.part_name,
+          item.part_name_snapshot,
           item.is_safe === null ? 'Pending' : item.is_safe ? 'Safe' : 'Unsafe',
           item.timestamp ? new Date(item.timestamp).toLocaleString() : 'N/A',
           item.remarks || '',
-          item.photo_url || ''
+          item.photo_url ? "Photo Available" : "No Photo" // Avoid large data URIs in CSV
         ].map(field => `"${String(field).replace(/"/g, '""')}"`);
         csvRows.push(row.join(','));
       });
        if (!report.items || report.items.length === 0) {
         const row = [
           report.id,
-          report.unitId,
-          report.date,
-          report.operator,
+          report.unit_code_display,
+          new Date(report.date).toLocaleString(),
+          report.operator_username,
           report.status,
           'N/A', 'N/A', 'N/A', '', ''
         ].map(field => `"${String(field).replace(/"/g, '""')}"`);
@@ -224,42 +183,38 @@ export default function ReportPage() {
     }
   };
 
-  const isClickablePhoto = (url: string | null | undefined): url is string => {
-    return !!(url && url !== PLACEHOLDER_IMAGE_DATA_URL && !url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP"));
-  }
-
   const handleOpenDeleteDialog = (id: string) => {
     setReportToDeleteId(id);
     setIsDeleteConfirmOpen(true);
   };
 
-  const handleConfirmDelete = () => {
+  const handleConfirmDelete = async () => {
     if (!reportToDeleteId) return;
-
     try {
-      const currentReports = getFromLocalStorage<StoredInspectionReport[]>(REPORTS_STORAGE_KEY, []);
-      const updatedReports = currentReports.filter(report => report.id !== reportToDeleteId);
-      saveToLocalStorage(REPORTS_STORAGE_KEY, updatedReports);
-      toast({ title: "Report Deleted", description: `Report ID ${reportToDeleteId.substring(0,8)}... removed from local storage.` });
-
-      const currentDowntimeLogs = getFromLocalStorage<StoredDowntimeLog[]>(DOWNTIME_STORAGE_KEY, []);
-      const updatedDowntimeLogs = currentDowntimeLogs.filter(log => log.sourceReportId !== reportToDeleteId);
-
-      if (currentDowntimeLogs.length !== updatedDowntimeLogs.length) {
-        saveToLocalStorage(DOWNTIME_STORAGE_KEY, updatedDowntimeLogs);
-        toast({ title: "Associated Downtime Log Deleted", description: `Downtime log linked to report ${reportToDeleteId.substring(0,8)}... also removed.`, duration: 4000 });
+      await apiService.deleteInspectionReport(reportToDeleteId);
+      toast({ title: "Report Deleted", description: `Report ID ${reportToDeleteId.substring(0,8)}... removed via API.` });
+      
+      // Also attempt to delete associated downtime log by sourceReportId
+      // This assumes your API supports this specific deletion method.
+      try {
+        await apiService.deleteDowntimeLogBySourceReportId(reportToDeleteId);
+        toast({ title: "Associated Downtime Log Checked/Deleted", description: `Downtime log linked to report ${reportToDeleteId.substring(0,8)}... also removed if it existed.`, duration: 4000 });
+      } catch (downtimeError) {
+        // It's possible no downtime log existed, or the specific delete by sourceReportId failed
+        // Not critical to block report deletion, so just log it
+        console.warn("Could not delete associated downtime log or it didn't exist:", downtimeError);
+        toast({ title: "Note", description: "Could not automatically delete associated downtime log, or none existed.", variant:"default", duration: 4000});
       }
       
-      loadReports();
+      loadReports(); // Refresh the list
     } catch (error) {
-      console.error("Error deleting report or associated downtime log from localStorage:", error);
-      toast({ title: "Deletion Error", description: (error instanceof Error) ? error.message : "Could not delete data from local storage.", variant: "destructive" });
+      console.error("Error deleting report via API:", error);
+      toast({ title: "Deletion Error", description: (error instanceof Error) ? error.message : "Could not delete data from API.", variant: "destructive" });
     } finally {
       setIsDeleteConfirmOpen(false);
       setReportToDeleteId(null);
     }
   };
-
 
   return (
     <div className="space-y-8">
@@ -270,7 +225,7 @@ export default function ReportPage() {
             <FileText className="mr-3 h-8 w-8 text-primary" />
             Forklift Inspection Report
           </CardTitle>
-          <CardDescription>View, filter, and manage forklift inspection history from local storage.</CardDescription>
+          <CardDescription>View, filter, and manage forklift inspection history from API.</CardDescription>
         </CardHeader>
       </Card>
 
@@ -314,11 +269,11 @@ export default function ReportPage() {
             </div>
           </div>
           <div className="flex flex-col sm:flex-row gap-2 md:col-span-1 lg:col-span-1 lg:items-end">
-            <Button onClick={handleExportCsv} className="w-full sm:w-auto text-base">
+            <Button onClick={handleExportCsv} className="w-full sm:w-auto text-base" disabled={filteredData.length === 0 || isLoading}>
               <Download className="mr-2 h-5 w-5" /> Export CSV
             </Button>
-            <Button onClick={loadReports} variant="outline" className="w-full sm:w-auto text-base">
-              <RefreshCw className="mr-2 h-5 w-5" /> Refresh Data
+            <Button onClick={loadReports} variant="outline" className="w-full sm:w-auto text-base" disabled={isLoading}>
+              <RefreshCw className="mr-2 h-5 w-5" /> {isLoading ? "Refreshing..." : "Refresh Data"}
             </Button>
           </div>
         </CardContent>
@@ -335,7 +290,7 @@ export default function ReportPage() {
               <div className="w-[0%]"></div> {/* For accordion chevron */}
             </div>
           {isLoading ? (
-            <div className="text-center p-10 text-muted-foreground">Loading reports...</div>
+            <div className="flex justify-center items-center py-10"><Loader2 className="h-8 w-8 animate-spin text-primary"/><span className="ml-2 text-muted-foreground">Loading reports from API...</span></div>
           ) : (
           <Accordion type="multiple" className="w-full">
             {filteredData.map((report) => (
@@ -343,13 +298,13 @@ export default function ReportPage() {
                  <AccordionTrigger className="hover:bg-muted/50 w-full p-0 data-[state=open]:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background">
                   <div className="flex flex-col md:flex-row flex-1 items-start md:items-center space-y-1 md:space-y-0 md:space-x-4 px-4 py-3 w-full text-left">
                     <div className="font-medium w-full md:w-[20%] truncate">
-                      <span className="md:hidden font-semibold text-xs text-muted-foreground">Unit: </span>{report.unitId}
+                      <span className="md:hidden font-semibold text-xs text-muted-foreground">Unit: </span>{report.unit_code_display}
                     </div>
                     <div className="text-sm text-muted-foreground w-full md:w-[25%] truncate">
-                      <span className="md:hidden font-semibold text-xs text-muted-foreground">Date: </span>{report.date}
+                      <span className="md:hidden font-semibold text-xs text-muted-foreground">Date: </span>{new Date(report.date).toLocaleString()}
                     </div>
                     <div className="text-sm text-muted-foreground w-full md:w-[20%] truncate">
-                      <span className="md:hidden font-semibold text-xs text-muted-foreground">Operator: </span>{report.operator}
+                      <span className="md:hidden font-semibold text-xs text-muted-foreground">Operator: </span>{report.operator_username}
                     </div>
                     <div className="w-full md:w-[15%]">
                        <span className="md:hidden font-semibold text-xs text-muted-foreground">Status: </span>
@@ -357,7 +312,7 @@ export default function ReportPage() {
                         variant={report.status === 'Safe' ? 'default' : 'destructive'}
                         className={cn(
                           'text-xs',
-                          report.status === 'Safe' ? 'bg-green-500 hover:bg-green-600' : 'bg-red-500 hover:bg-red-600'
+                          report.status === 'Safe' ? 'bg-green-500 hover:bg-green-600 text-white' : 'bg-red-500 hover:bg-red-600 text-white'
                         )}
                       >
                         {report.status}
@@ -366,10 +321,10 @@ export default function ReportPage() {
                     <div className="w-full md:w-[20%] flex items-center md:justify-center">
                        <span className="md:hidden font-semibold text-xs text-muted-foreground mr-2">Rep. Photo: </span>
                        {isClickablePhoto(report.representativePhotoUrl) ? (
-                          <div role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); openImageModal(report.representativePhotoUrl, `Inspection for ${report.unitId}`);}} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openImageModal(report.representativePhotoUrl, `Inspection for ${report.unitId}`);}}} className="relative group p-0 border-none bg-transparent h-auto cursor-pointer">
+                          <div role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); openImageModal(report.representativePhotoUrl, `Inspection for ${report.unit_code_display}`);}} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); openImageModal(report.representativePhotoUrl, `Inspection for ${report.unit_code_display}`);}}} className="relative group p-0 border-none bg-transparent h-auto cursor-pointer">
                             <Image
                               src={report.representativePhotoUrl}
-                              alt={`Inspection for ${report.unitId}`}
+                              alt={`Inspection for ${report.unit_code_display}`}
                               width={60}
                               height={45}
                               className="rounded-md object-cover group-hover:opacity-80 transition-opacity"
@@ -381,7 +336,7 @@ export default function ReportPage() {
                         ) : (
                           <Image
                             src={report.representativePhotoUrl || PLACEHOLDER_IMAGE_DATA_URL}
-                            alt={`Inspection for ${report.unitId}`}
+                            alt={`Inspection for ${report.unit_code_display}`}
                             width={60}
                             height={45}
                             className="rounded-md object-cover"
@@ -395,14 +350,14 @@ export default function ReportPage() {
                 <AccordionContent>
                   <div className="p-4 bg-secondary/30 border-t">
                     <div className="flex justify-end space-x-2 mb-4">
-                        <Button variant="outline" size="sm" className="text-xs" disabled>
+                        <Button variant="outline" size="sm" className="text-xs" disabled> {/* Edit functionality not implemented */}
                             <Edit className="mr-1 h-3 w-3" /> Edit
                         </Button>
                         <Button variant="destructive" size="sm" className="text-xs" onClick={() => handleOpenDeleteDialog(report.id)}>
                             <Trash2 className="mr-1 h-3 w-3" /> Delete
                         </Button>
                     </div>
-                    <h4 className="text-lg font-semibold mb-3">Inspection Items for Unit {report.unitId}:</h4>
+                    <h4 className="text-lg font-semibold mb-3">Inspection Items for Unit {report.unit_code_display}:</h4>
                     {report.items && report.items.length > 0 ? (
                       <div className="overflow-x-auto">
                         <Table>
@@ -417,8 +372,8 @@ export default function ReportPage() {
                           </TableHeader>
                           <TableBody>
                             {report.items.map((item, idx) => (
-                              <TableRow key={`${report.id}-item-${item.checklistItemId}-${idx}`}>
-                                <TableCell className="font-medium">{item.part_name}</TableCell>
+                              <TableRow key={`${report.id}-item-${item.checklist_item_id_fk || idx}`}>
+                                <TableCell className="font-medium">{item.part_name_snapshot}</TableCell>
                                 <TableCell>
                                   {item.is_safe === null ? <span className="text-muted-foreground">Pending</span> :
                                   item.is_safe ?
@@ -439,14 +394,14 @@ export default function ReportPage() {
                                 </TableCell>
                                 <TableCell className="text-center">
                                   {isClickablePhoto(item.photo_url) ? (
-                                    <div role="button" tabIndex={0} onClick={() => openImageModal(item.photo_url!, item.part_name)} onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') openImageModal(item.photo_url!, item.part_name);}} className="relative group p-0 border-none bg-transparent h-auto cursor-pointer inline-block">
+                                    <div role="button" tabIndex={0} onClick={() => openImageModal(item.photo_url!, item.part_name_snapshot)} onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') openImageModal(item.photo_url!, item.part_name_snapshot);}} className="relative group p-0 border-none bg-transparent h-auto cursor-pointer inline-block">
                                       <Image
                                         src={item.photo_url!}
-                                        alt={item.part_name}
+                                        alt={item.part_name_snapshot}
                                         width={80}
                                         height={60}
                                         className="rounded-md object-cover mx-auto group-hover:opacity-80 transition-opacity"
-                                        data-ai-hint={item.part_name.toLowerCase()}
+                                        data-ai-hint={item.part_name_snapshot.toLowerCase()}
                                         onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
                                       />
                                       <ZoomIn className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-full p-1" />
@@ -456,11 +411,11 @@ export default function ReportPage() {
                                       { item.photo_url && item.photo_url !== PLACEHOLDER_IMAGE_DATA_URL && !item.photo_url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP") ? (
                                         <Image
                                           src={item.photo_url}
-                                          alt={item.part_name}
+                                          alt={item.part_name_snapshot}
                                           width={80}
                                           height={60}
                                           className="rounded-md object-cover mx-auto"
-                                          data-ai-hint={item.part_name.toLowerCase()}
+                                          data-ai-hint={item.part_name_snapshot.toLowerCase()}
                                           onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
                                         />
                                       ) : (
@@ -489,7 +444,7 @@ export default function ReportPage() {
                   <tbody className="[&_tr:last-child]:border-0">
                     <tr className="border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted">
                       <td colSpan={6} className="p-4 align-middle text-center py-10 text-muted-foreground">
-                        No inspection records found with current filters.
+                        No inspection records found with current filters from API.
                       </td>
                     </tr>
                   </tbody>
@@ -505,7 +460,7 @@ export default function ReportPage() {
             <AlertDialogTitle>Are you sure you want to delete this report?</AlertDialogTitle>
             <AlertDialogDescription>
               This action cannot be undone. This will permanently delete the inspection report
-              (ID: {reportToDeleteId ? `${reportToDeleteId.substring(0,8)}...` : ''}) and any associated downtime log from local storage.
+              (ID: {reportToDeleteId ? `${reportToDeleteId.substring(0,8)}...` : ''}) and any associated downtime log from the API.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -516,8 +471,6 @@ export default function ReportPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-
     </div>
   );
 }
-

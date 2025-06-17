@@ -10,26 +10,16 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogClose } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { RefreshCw, ListChecks, CheckSquare, Edit, Eye, ZoomIn, ImageOff, PlusCircle, History } from 'lucide-react';
-import type { StoredDowntimeLog, DowntimeUnsafeItem } from '@/lib/types';
+import { RefreshCw, ListChecks, CheckSquare, Edit, Eye, ZoomIn, ImageOff, PlusCircle, History, Loader2 } from 'lucide-react';
+import type { StoredDowntimeLog, DowntimeUnsafeItem, User } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
+import { useAuth } from '@/context/AuthContext';
 import Image from 'next/image';
 import ImageModal from '@/components/shared/ImageModal';
 import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-
-const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs';
-
-const getStoredDowntimeLogs = (): StoredDowntimeLog[] => {
-  if (typeof window === 'undefined') return [];
-  const logsJson = localStorage.getItem(DOWNTIME_STORAGE_KEY);
-  return logsJson ? JSON.parse(logsJson) : [];
-};
-
-const saveStoredDowntimeLogs = (logs: StoredDowntimeLog[]) => {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(DOWNTIME_STORAGE_KEY, JSON.stringify(logs));
-};
+import * as apiService from '@/services/apiService';
+import { parseISO } from 'date-fns';
 
 
 export default function DowntimePage() {
@@ -41,6 +31,7 @@ export default function DowntimePage() {
   const [isDetailsModalOpen, setIsDetailsModalOpen] = useState(false);
   const [selectedLogForDetails, setSelectedLogForDetails] = useState<StoredDowntimeLog | null>(null);
   const { toast } = useToast();
+  const { user } = useAuth();
   const [activeTab, setActiveTab] = useState("viewLogs");
 
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
@@ -56,38 +47,31 @@ export default function DowntimePage() {
   const loadDowntimeLogs = useCallback(async () => {
     setIsLoading(true);
     try {
-      const logsFromStorage = getStoredDowntimeLogs();
-      
-      const validLogs = logsFromStorage.filter(log =>
-        log && typeof log.id === 'string' && typeof log.unitId === 'string' &&
-        typeof log.reason === 'string' && typeof log.startTime === 'string' &&
-        typeof log.loggedAt === 'string' && (log.endTime === null || typeof log.endTime === 'string' || typeof log.endTime === 'undefined') &&
-        (log.unsafeItems === undefined || Array.isArray(log.unsafeItems)) 
+      const logsFromApi = await apiService.fetchDowntimeLogs();
+      const validLogs = logsFromApi.filter(log =>
+        log && typeof log.id === 'string' && typeof log.unit_id_fk === 'string' && // API uses unit_id_fk
+        typeof log.reason === 'string' && typeof log.start_time === 'string' &&
+        (log.end_time === null || typeof log.end_time === 'string' || typeof log.end_time === 'undefined') &&
+        (log.unsafe_items === undefined || Array.isArray(log.unsafe_items)) 
       ).sort((a, b) => {
-          let dateAVal: number, dateBVal: number;
-          try { dateAVal = new Date(a.loggedAt).getTime(); } catch { dateAVal = NaN; }
-          try { dateBVal = new Date(b.loggedAt).getTime(); } catch { dateBVal = NaN; }
-
+          // API should provide logged_at, if not, sort by start_time
+          const dateAVal = parseISO(a.logged_at || a.start_time).getTime();
+          const dateBVal = parseISO(b.logged_at || b.start_time).getTime();
           if (isNaN(dateAVal) && isNaN(dateBVal)) return 0;
           if (isNaN(dateAVal)) return 1;
           if (isNaN(dateBVal)) return -1;
           return dateBVal - dateAVal;
         });
-
       setDowntimeLogs(validLogs);
-      if (typeof window !== 'undefined') {
-        toast({ title: "Downtime Logs Loaded", description: "Data loaded from local storage.", duration: 3000 });
-      }
+      toast({ title: "Downtime Logs Loaded", description: "Data loaded from API.", duration: 3000 });
     } catch (error) {
-      console.error("An unexpected error occurred while loading downtime logs from localStorage:", error);
+      console.error("An unexpected error occurred while loading downtime logs from API:", error);
       setDowntimeLogs([]); 
-      if (typeof window !== 'undefined') {
-        toast({
-          title: "Error Loading Downtime Logs",
-          description: (error instanceof Error) ? error.message : "An unexpected error occurred.",
-          variant: "destructive",
-        });
-      }
+      toast({
+        title: "Error Loading Downtime Logs",
+        description: (error instanceof Error) ? error.message : "An unexpected error occurred.",
+        variant: "destructive",
+      });
     } finally {
       setIsLoading(false);
     }
@@ -115,58 +99,42 @@ export default function DowntimePage() {
   const handleOpenEditEndTimeModal = (log: StoredDowntimeLog) => {
     setSelectedLogForEdit(log);
     let initialEndTime = '';
-
-    if (log.endTime && typeof log.endTime === 'string') {
+    if (log.end_time && typeof log.end_time === 'string') {
         try {
-            const d = new Date(log.endTime);
+            const d = new Date(log.end_time);
             if (!isNaN(d.getTime())) {
                 const offset = d.getTimezoneOffset() * 60000;
                 initialEndTime = new Date(d.getTime() - offset).toISOString().slice(0, 16);
-            } else {
-                 console.warn(`Invalid log.endTime for input: ${log.endTime}`);
-            }
-        } catch (e) {
-            console.error(`Error processing log.endTime for input: ${log.endTime}`, e);
-        }
+            } else { console.warn(`Invalid log.end_time for input: ${log.end_time}`); }
+        } catch (e) { console.error(`Error processing log.end_time for input: ${log.end_time}`, e); }
     }
-
     if (!initialEndTime) {
         const now = new Date();
         const offset = now.getTimezoneOffset() * 60000;
         initialEndTime = new Date(now.getTime() - offset).toISOString().slice(0, 16);
     }
-    
     setCurrentEditingEndTime(initialEndTime);
     setIsEndTimeModalOpen(true);
   };
 
   const handleSaveEndTime = async () => {
-    if (!selectedLogForEdit || !currentEditingEndTime) {
-      toast({ title: "Error", description: "End time cannot be empty.", variant: "destructive" });
+    if (!selectedLogForEdit || !currentEditingEndTime || !user) {
+      toast({ title: "Error", description: "End time cannot be empty or user not found.", variant: "destructive" });
       return;
     }
-
     try {
-      const currentLogs = getStoredDowntimeLogs();
-      const logIndex = currentLogs.findIndex(log => log.id === selectedLogForEdit.id);
-
-      if (logIndex === -1) {
-        toast({ title: "Update Error", description: "Log not found in local storage.", variant: "destructive" });
-        return;
-      }
-      
-      currentLogs[logIndex].endTime = new Date(currentEditingEndTime).toISOString();
-      saveStoredDowntimeLogs(currentLogs);
-      
-      toast({ title: "Success", description: `End time updated for unit ${selectedLogForEdit.unitId} in local storage.` });
-      
+      const updatedData = {
+        end_time: new Date(currentEditingEndTime).toISOString(),
+        // serviced_by_user_id: user.id, // API should handle associating user if needed
+      };
+      await apiService.updateDowntimeLog(selectedLogForEdit.id, updatedData);
+      toast({ title: "Success", description: `End time updated for unit ${selectedLogForEdit.unit_code_display} via API.` });
       loadDowntimeLogs(); 
       setIsEndTimeModalOpen(false);
       setSelectedLogForEdit(null);
-
     } catch (error) {
-        console.error("Error updating end time in localStorage:", error);
-        toast({ title: "Update Error", description: (error instanceof Error) ? error.message : "Could not update end time locally.", variant: "destructive" });
+        console.error("Error updating end time via API:", error);
+        toast({ title: "Update Error", description: (error instanceof Error) ? error.message : "Could not update end time via API.", variant: "destructive" });
     }
   };
 
@@ -209,7 +177,7 @@ export default function DowntimePage() {
                   <ListChecks className="mr-3 h-7 w-7 text-primary" />
                   Recent Downtime Logs
                 </CardTitle>
-                <CardDescription>List of all recorded forklift downtime incidents from local storage. Set end times to mark repairs as complete. View details for inspection-generated logs.</CardDescription>
+                <CardDescription>List of all recorded forklift downtime incidents from API. Set end times to mark repairs as complete. View details for inspection-generated logs.</CardDescription>
               </div>
               <Button onClick={loadDowntimeLogs} variant="outline" size="sm" disabled={isLoading}>
                 <RefreshCw className="mr-2 h-4 w-4" /> {isLoading ? "Refreshing..." : "Refresh Logs"}
@@ -217,9 +185,9 @@ export default function DowntimePage() {
             </CardHeader>
             <CardContent>
               {isLoading ? (
-                <p className="text-center py-4">Loading downtime logs from local storage...</p>
+                <div className="flex justify-center items-center py-4"><Loader2 className="h-8 w-8 animate-spin text-primary"/><span className="ml-2 text-muted-foreground">Loading downtime logs from API...</span></div>
               ) : downtimeLogs.length === 0 ? (
-                <p className="text-muted-foreground text-center py-4">No downtime logs recorded locally yet.</p>
+                <p className="text-muted-foreground text-center py-4">No downtime logs recorded in the API yet.</p>
               ) : (
                 <Table>
                   <TableHeader>
@@ -236,13 +204,13 @@ export default function DowntimePage() {
                   <TableBody>
                     {downtimeLogs.map((log) => (
                       <TableRow key={log.id}>
-                        <TableCell className="font-medium">{log.unitId}</TableCell>
+                        <TableCell className="font-medium">{log.unit_code_display}</TableCell>
                         <TableCell>{log.reason}</TableCell>
-                        <TableCell>{formatDateTime(log.startTime)}</TableCell>
-                        <TableCell>{formatDateTime(log.endTime)}</TableCell>
-                        <TableCell>{formatDateTime(log.loggedAt)}</TableCell>
+                        <TableCell>{formatDateTime(log.start_time)}</TableCell>
+                        <TableCell>{formatDateTime(log.end_time)}</TableCell>
+                        <TableCell>{formatDateTime(log.logged_at)}</TableCell>
                         <TableCell className="text-center">
-                          {log.unsafeItems && log.unsafeItems.length > 0 ? (
+                          {log.unsafe_items && log.unsafe_items.length > 0 ? (
                             <Button variant="ghost" size="sm" onClick={() => handleOpenDetailsModal(log)}>
                               <Eye className="mr-1 h-4 w-4" /> View
                             </Button>
@@ -251,7 +219,7 @@ export default function DowntimePage() {
                           )}
                         </TableCell>
                         <TableCell className="text-right">
-                          {!log.endTime ? (
+                          {!log.end_time ? (
                             <Button variant="outline" size="sm" onClick={() => handleOpenEditEndTimeModal(log)}>
                               <Edit className="mr-2 h-4 w-4" /> Set End Time
                             </Button>
@@ -274,7 +242,7 @@ export default function DowntimePage() {
       <Dialog open={isEndTimeModalOpen} onOpenChange={setIsEndTimeModalOpen}>
         <DialogContent className="sm:max-w-[425px]">
           <DialogHeader>
-            <DialogTitle>Set Downtime End Time for Unit {selectedLogForEdit?.unitId}</DialogTitle>
+            <DialogTitle>Set Downtime End Time for Unit {selectedLogForEdit?.unit_code_display}</DialogTitle>
             <DialogDescription>
               Mark the forklift as repaired and record when it became operational. Click save when you're done.
             </DialogDescription>
@@ -305,12 +273,12 @@ export default function DowntimePage() {
       <Dialog open={isDetailsModalOpen} onOpenChange={setIsDetailsModalOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
-            <DialogTitle>Unsafe Item Details for Unit {selectedLogForDetails?.unitId}</DialogTitle>
+            <DialogTitle>Unsafe Item Details for Unit {selectedLogForDetails?.unit_code_display}</DialogTitle>
             <DialogDescription>
               The following items were reported as unsafe during the inspection that triggered this downtime log.
             </DialogDescription>
           </DialogHeader>
-          {selectedLogForDetails?.unsafeItems && selectedLogForDetails.unsafeItems.length > 0 ? (
+          {selectedLogForDetails?.unsafe_items && selectedLogForDetails.unsafe_items.length > 0 ? (
             <div className="py-4 max-h-[60vh] overflow-y-auto">
               <Table>
                 <TableHeader>
@@ -321,7 +289,7 @@ export default function DowntimePage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {selectedLogForDetails.unsafeItems.map((item, index) => (
+                  {selectedLogForDetails.unsafe_items.map((item, index) => (
                     <TableRow key={index}>
                       <TableCell className="font-medium">{item.part_name}</TableCell>
                       <TableCell>{item.remarks || <span className="text-xs text-muted-foreground italic">No remarks</span>}</TableCell>
@@ -372,8 +340,6 @@ export default function DowntimePage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
     </div>
   );
 }
-

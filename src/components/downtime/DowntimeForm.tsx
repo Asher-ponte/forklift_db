@@ -1,76 +1,90 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Clock, Save } from 'lucide-react';
-import { v4 as uuidv4 } from 'uuid';
-import type { StoredDowntimeLog } from '@/lib/types';
+import { Clock, Save, Loader2 } from 'lucide-react';
+import type { StoredDowntimeLog, MheUnit } from '@/lib/types';
+import * as apiService from '@/services/apiService';
+import { useAuth } from '@/context/AuthContext';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
 
 interface DowntimeFormProps {
   onLogAdded: () => void;
 }
 
-const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs';
-
-const getStoredDowntimeLogs = (): StoredDowntimeLog[] => {
-  if (typeof window === 'undefined') return [];
-  const logsJson = localStorage.getItem(DOWNTIME_STORAGE_KEY);
-  return logsJson ? JSON.parse(logsJson) : [];
-};
-
-const saveStoredDowntimeLogs = (logs: StoredDowntimeLog[]) => {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem(DOWNTIME_STORAGE_KEY, JSON.stringify(logs));
-};
-
 export default function DowntimeForm({ onLogAdded }: DowntimeFormProps) {
-  const [unitId, setUnitId] = useState('');
+  const [selectedMheId, setSelectedMheId] = useState<string>(''); // Store MheUnit.id (UUID)
   const [reason, setReason] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const { toast } = useToast();
+  const { user } = useAuth();
+
+  const [mheUnits, setMheUnits] = useState<MheUnit[]>([]);
+  const [isLoadingMheUnits, setIsLoadingMheUnits] = useState(true);
+
+  useEffect(() => {
+    const fetchMheData = async () => {
+      setIsLoadingMheUnits(true);
+      try {
+        const units = await apiService.fetchMheUnits();
+        setMheUnits(units.filter(u => u.status !== 'inactive')); // Only show active/maintenance MHEs
+      } catch (error) {
+        toast({ title: "Error Loading MHE Units", description: (error instanceof Error) ? error.message : "Could not load MHE units for selection.", variant: "destructive"});
+        setMheUnits([]);
+      } finally {
+        setIsLoadingMheUnits(false);
+      }
+    };
+    fetchMheData();
+  }, [toast]);
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!unitId || !reason || !startTime) {
-      toast({ title: "Validation Error", description: "Unit ID, Reason, and Start Time are required.", variant: "destructive" });
+    if (!selectedMheId || !reason || !startTime || !user) {
+      toast({ title: "Validation Error", description: "MHE Unit ID, Reason, and Start Time are required. User must be logged in.", variant: "destructive" });
       return;
     }
     setIsSubmitting(true);
     
-    const newLogEntry: StoredDowntimeLog = {
-      id: uuidv4(),
-      unitId,
+    const selectedMhe = mheUnits.find(m => m.id === selectedMheId);
+    if (!selectedMhe) {
+        toast({ title: "Error", description: "Selected MHE Unit not found.", variant: "destructive" });
+        setIsSubmitting(false);
+        return;
+    }
+
+    const newLogPayload: Omit<StoredDowntimeLog, 'id' | 'logged_at' | 'unsafe_items' | 'source_report_id_fk'> = {
+      unit_id_fk: selectedMhe.id,
+      unit_code_display: selectedMhe.unit_code,
       reason,
-      startTime,
-      endTime: endTime || null,
-      loggedAt: new Date().toISOString(),
+      start_time: new Date(startTime).toISOString(),
+      end_time: endTime ? new Date(endTime).toISOString() : null,
+      user_id_fk: user.id,
     };
 
     try {
-      const currentLogs = getStoredDowntimeLogs();
-      currentLogs.push(newLogEntry);
-      saveStoredDowntimeLogs(currentLogs);
-
-      toast({ title: "Downtime Logged", description: `Downtime for unit ${unitId} has been saved to local storage.`});
+      await apiService.addDowntimeLog(newLogPayload);
+      toast({ title: "Downtime Logged", description: `Downtime for unit ${selectedMhe.unit_code} has been saved via API.`});
       onLogAdded(); 
-
-      setUnitId('');
+      setSelectedMheId('');
       setReason('');
       setStartTime('');
       setEndTime('');
     } catch (error) {
-      console.error("Error saving downtime log to localStorage:", error);
+      console.error("Error saving downtime log via API:", error);
       toast({
         title: "Submission Error",
-        description: (error instanceof Error) ? error.message : "Could not save the downtime log to local storage.",
+        description: (error instanceof Error) ? error.message : "Could not save the downtime log via API.",
         variant: "destructive",
       });
     } finally {
@@ -85,21 +99,30 @@ export default function DowntimeForm({ onLogAdded }: DowntimeFormProps) {
           <Clock className="mr-3 h-8 w-8 text-primary" />
           Log Forklift Downtime
         </CardTitle>
-        <CardDescription>Record periods when a forklift unit is not operational. Data saved to local storage.</CardDescription>
+        <CardDescription>Record periods when a forklift unit is not operational. Data saved to API.</CardDescription>
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
-              <Label htmlFor="unitId">Forklift Unit ID</Label>
-              <Input
-                id="unitId"
-                value={unitId}
-                onChange={(e) => setUnitId(e.target.value)}
-                placeholder="e.g. FL001"
-                required
-                className="text-base"
-              />
+              <Label htmlFor="unitIdSelect">Forklift Unit ID</Label>
+              <Select 
+                value={selectedMheId} 
+                onValueChange={setSelectedMheId}
+                disabled={isLoadingMheUnits || mheUnits.length === 0}
+              >
+                <SelectTrigger id="unitIdSelect" className="text-base">
+                  <SelectValue placeholder={isLoadingMheUnits ? "Loading MHEs..." : (mheUnits.length === 0 ? "No MHEs available" : "Select MHE Unit...")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {mheUnits.map(mhe => (
+                    <SelectItem key={mhe.id} value={mhe.id}>{mhe.unit_code} - {mhe.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+               {mheUnits.length === 0 && !isLoadingMheUnits && (
+                <p className="text-xs text-muted-foreground">No active MHE units found. Add them in Data Management.</p>
+              )}
             </div>
              <div className="space-y-2"> {/* Empty div for spacing, or add another field here */}
             </div>
@@ -141,8 +164,8 @@ export default function DowntimeForm({ onLogAdded }: DowntimeFormProps) {
             </div>
           </div>
           
-          <Button type="submit" className="w-full md:w-auto text-base" disabled={isSubmitting}>
-            <Save className="mr-2 h-5 w-5" />
+          <Button type="submit" className="w-full md:w-auto text-base" disabled={isSubmitting || isLoadingMheUnits}>
+            {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin"/> : <Save className="mr-2 h-5 w-5" />}
             {isSubmitting ? 'Logging Downtime...' : 'Log Downtime'}
           </Button>
         </form>

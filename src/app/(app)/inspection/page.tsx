@@ -7,8 +7,8 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import CompletionProgress from '@/components/inspection/CompletionProgress';
 import SafetyCheckModal from '@/components/inspection/SafetyCheckModal';
-import type { ChecklistItem as SafetyCheckModalItem } from '@/lib/mock-data';
-import type { StoredInspectionReport, StoredDowntimeLog, DowntimeUnsafeItem } from '@/lib/types';
+import type { ChecklistItem as SafetyCheckModalItem } from '@/lib/mock-data'; // Keep this for modal prop type
+import type { StoredInspectionReport, Department, MheUnit, ChecklistMasterItem, DowntimeUnsafeItem, StoredDowntimeLog } from '@/lib/types';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/context/AuthContext';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -27,78 +27,24 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from '@/components/ui/badge';
-import { v4 as uuidv4 } from 'uuid';
 import { isValid, parseISO } from 'date-fns';
 import { PLACEHOLDER_IMAGE_DATA_URL } from '@/lib/mock-data';
-
-const getFromLocalStorage = <T>(key: string, defaultValue: T): T => {
-  if (typeof window === 'undefined') return defaultValue;
-  const item = localStorage.getItem(key);
-  if (item) {
-    try {
-      return JSON.parse(item) as T;
-    } catch (e) {
-      console.warn(`Error parsing localStorage item ${key}:`, e);
-      return defaultValue;
-    }
-  }
-  return defaultValue;
-};
-
-const saveToLocalStorage = <T>(key: string, value: T): void => {
-  if (typeof window === 'undefined') return;
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch (e) {
-    console.error(`Error saving to localStorage item ${key}:`, e);
-  }
-};
+import * as apiService from '@/services/apiService';
 
 export interface InspectionRecordClientState {
-  checklistItemId: string;
-  part_name: string;
-  question: string;
+  checklistItemId: string; // This will be the ID from ChecklistMasterItem
+  part_name: string; // Snapshot from ChecklistMasterItem
+  question: string; // Snapshot from ChecklistMasterItem
   is_safe: boolean | null;
-  photo_url: string | null;
-  timestamp: string | null;
+  photo_url: string | null; // Data URI
+  timestamp: string | null; // ISO string
   completed: boolean;
   remarks: string | null;
 }
 
-const REPORTS_STORAGE_KEY = 'forkliftInspectionReports';
-const DOWNTIME_STORAGE_KEY = 'forkliftDowntimeLogs';
-const CHECKLIST_ITEMS_KEY = 'forkliftChecklistMasterItems';
-const DEPARTMENTS_KEY = 'forkliftDepartments';
-const MHE_UNITS_KEY = 'forkliftMheUnits';
-
 const isClickablePhoto = (url: string | null | undefined): url is string => {
   return !!(url && url !== PLACEHOLDER_IMAGE_DATA_URL && !url.startsWith("data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP"));
 }
-
-interface Department {
-  id: string;
-  name: string;
-  description?: string | null;
-}
-
-interface MheUnit {
-  id: string; // uuid
-  unit_code: string;
-  name: string;
-  department_id?: string | null;
-  type?: string | null;
-  status?: 'active' | 'inactive' | 'maintenance';
-}
-
-interface ChecklistMasterItem {
-  id: string;
-  qr_code_data?: string | null;
-  part_name: string;
-  description?: string | null;
-  question: string;
-  is_active?: boolean;
-}
-
 
 export default function InspectionPage() {
   const [departments, setDepartments] = useState<Department[]>([]);
@@ -106,7 +52,7 @@ export default function InspectionPage() {
   const [isLoadingInitialData, setIsLoadingInitialData] = useState(true);
 
   const [selectedDepartmentId, setSelectedDepartmentId] = useState<string>('');
-  const [selectedMheId, setSelectedMheId] = useState<string>('');
+  const [selectedMheId, setSelectedMheId] = useState<string>(''); // This will be MheUnit.id (UUID)
   const [isInspectionSetupConfirmed, setIsInspectionSetupConfirmed] = useState(false);
   
   const [masterChecklist, setMasterChecklist] = useState<ChecklistMasterItem[]>([]);
@@ -134,59 +80,70 @@ export default function InspectionPage() {
   };
 
   useEffect(() => {
-    setIsLoadingInitialData(true);
-    try {
-      const storedDepartments = getFromLocalStorage<Department[]>(DEPARTMENTS_KEY, []);
-      const storedMheUnits = getFromLocalStorage<MheUnit[]>(MHE_UNITS_KEY, []);
-      setDepartments(storedDepartments);
-      setMheUnits(storedMheUnits);
-      if (storedDepartments.length === 0 && typeof window !== 'undefined') {
-        toast({ title: "No Departments", description: "No departments found. Please configure them in Data Management.", variant: "default", duration: 5000 });
+    const fetchInitialData = async () => {
+      setIsLoadingInitialData(true);
+      try {
+        const [fetchedDepartments, fetchedMheUnits] = await Promise.all([
+          apiService.fetchDepartments(),
+          apiService.fetchMheUnits()
+        ]);
+        setDepartments(fetchedDepartments);
+        setMheUnits(fetchedMheUnits);
+        if (fetchedDepartments.length === 0) {
+          toast({ title: "No Departments", description: "No departments found. Please configure them in Data Management.", variant: "default", duration: 5000 });
+        }
+      } catch (error) {
+        toast({ title: "Error Loading Setup Data", description: (error instanceof Error) ? error.message : "Could not load departments or MHE units.", variant: "destructive" });
+        setDepartments([]);
+        setMheUnits([]);
+      } finally {
+        setIsLoadingInitialData(false);
       }
-    } catch (error) {
-      if (typeof window !== 'undefined') {
-        toast({ title: "Error Loading Setup Data", description: "Could not load departments or MHE units.", variant: "destructive" });
-      }
-      setDepartments([]);
-      setMheUnits([]);
-    } finally {
-      setIsLoadingInitialData(false);
-    }
-  }, []); 
+    };
+    fetchInitialData();
+  }, [toast]);
 
   const filteredMHEs = useMemo(() => {
     if (!selectedDepartmentId) return [];
+    // Assuming MheUnit has department_id and status properties
     return mheUnits.filter(mhe => mhe.department_id === selectedDepartmentId && mhe.status !== 'inactive');
   }, [selectedDepartmentId, mheUnits]);
 
   useEffect(() => {
     if (isInspectionSetupConfirmed) {
-      setIsLoadingChecklist(true);
-      const storedItems = getFromLocalStorage<ChecklistMasterItem[]>(CHECKLIST_ITEMS_KEY, []);
-      const activeItems = storedItems.filter(item => item.is_active !== false);
+      const fetchChecklist = async () => {
+        setIsLoadingChecklist(true);
+        try {
+          const storedItems = await apiService.fetchChecklistItems();
+          const activeItems = storedItems.filter(item => item.is_active !== false);
 
-      if (activeItems.length > 0) {
-        setMasterChecklist(activeItems);
-      } else {
-        setMasterChecklist([]);
-        if (typeof window !== 'undefined') {
-          toast({
-            title: "No Checklist Items",
-            description: "No active inspection items found. Please configure them in Data Management. Inspection cannot proceed.",
-            variant: "destructive",
-            duration: 7000
-          });
+          if (activeItems.length > 0) {
+            setMasterChecklist(activeItems);
+          } else {
+            setMasterChecklist([]);
+            toast({
+              title: "No Checklist Items",
+              description: "No active inspection items found. Please configure them in Data Management. Inspection cannot proceed.",
+              variant: "destructive",
+              duration: 7000
+            });
+          }
+        } catch (error) {
+          setMasterChecklist([]);
+          toast({ title: "Error Loading Checklist", description: (error instanceof Error) ? error.message : "Could not load checklist items.", variant: "destructive" });
+        } finally {
+          setIsLoadingChecklist(false);
         }
-      }
-      setIsLoadingChecklist(false);
+      };
+      fetchChecklist();
     }
   }, [isInspectionSetupConfirmed, toast]);
 
   const resetInspectionState = useCallback((resetSelections = false) => {
     const initialItems = masterChecklist.map(item => ({
-      checklistItemId: item.id,
-      part_name: item.part_name,
-      question: item.question,
+      checklistItemId: item.id, // Store the ID from the master checklist
+      part_name: item.part_name, // Snapshot
+      question: item.question, // Snapshot
       is_safe: null,
       photo_url: null,
       timestamp: null,
@@ -202,10 +159,8 @@ export default function InspectionPage() {
       setSelectedMheId('');
       setIsInspectionSetupConfirmed(false);
       setMasterChecklist([]);
-      // previousReport is handled by its own useEffect
     }
   }, [masterChecklist]);
-
 
   useEffect(() => {
     if (isInspectionSetupConfirmed) {
@@ -218,12 +173,9 @@ export default function InspectionPage() {
     }
   }, [isInspectionSetupConfirmed, masterChecklist, resetInspectionState, isLoadingChecklist]);
 
-
   const completedItemsCount = useMemo(() => inspectionItems.filter(item => item.completed).length, [inspectionItems]);
   const totalItemsCount = useMemo(() => masterChecklist.length, [masterChecklist]);
-
   const isInspectionComplete = useMemo(() => totalItemsCount > 0 && completedItemsCount === totalItemsCount, [completedItemsCount, totalItemsCount]);
-
   const hasUnsafeItems = useMemo(() => {
     if (!isInspectionComplete) return false;
     return inspectionItems.some(item => item.completed && item.is_safe === false);
@@ -249,43 +201,43 @@ export default function InspectionPage() {
   }, [currentItemIdToInspect, masterChecklist]);
 
   const selectedMheDetails = useMemo(() => {
-    return mheUnits.find(mhe => mhe.id === selectedMheId);
+    return mheUnits.find(mhe => mhe.id === selectedMheId); // MheUnit.id is UUID
   }, [selectedMheId, mheUnits]);
 
   useEffect(() => {
-    if (selectedMheDetails && selectedMheDetails.unit_code && isInspectionSetupConfirmed) {
+    if (selectedMheDetails?.unit_code && isInspectionSetupConfirmed) { // Use unit_code for fetching
       const unitCode = selectedMheDetails.unit_code;
-      setIsLoadingPreviousReport(true);
-      setPreviousReport(null); 
-      try {
-        const allStoredReports = getFromLocalStorage<StoredInspectionReport[]>(REPORTS_STORAGE_KEY, []);
-        const reportsForUnit = allStoredReports
-          .filter(report => report.unitId === unitCode)
-          .sort((a, b) => {
-            try {
-              const dateA = parseISO(a.date);
-              const dateB = parseISO(b.date);
-              if (!isValid(dateA) && !isValid(dateB)) return 0;
-              if (!isValid(dateA)) return 1; 
-              if (!isValid(dateB)) return -1;
-              return dateB.getTime() - dateA.getTime();
-            } catch (e) { return 0; }
-          });
-        
-        setPreviousReport(reportsForUnit.length > 0 ? reportsForUnit[0] : null);
-      } catch (error) {
-        if (typeof window !== 'undefined') {
-          toast({ title: "Error Loading Previous Report", description: (error instanceof Error && error.message) || "Could not load data.", variant: "destructive" });
+      const fetchPreviousReport = async () => {
+        setIsLoadingPreviousReport(true);
+        setPreviousReport(null); 
+        try {
+          const reportsForUnit = await apiService.fetchInspectionReportsByUnitId(unitCode);
+          const sortedReports = reportsForUnit
+            .sort((a, b) => {
+              try {
+                const dateA = parseISO(a.date);
+                const dateB = parseISO(b.date);
+                if (!isValid(dateA) && !isValid(dateB)) return 0;
+                if (!isValid(dateA)) return 1; 
+                if (!isValid(dateB)) return -1;
+                return dateB.getTime() - dateA.getTime();
+              } catch (e) { return 0; }
+            });
+          
+          setPreviousReport(sortedReports.length > 0 ? sortedReports[0] : null);
+        } catch (error) {
+          toast({ title: "Error Loading Previous Report", description: (error instanceof Error) ? error.message : "Could not load data.", variant: "destructive" });
+          setPreviousReport(null);
+        } finally {
+          setIsLoadingPreviousReport(false);
         }
-        setPreviousReport(null);
-      } finally {
-        setIsLoadingPreviousReport(false);
-      }
+      };
+      fetchPreviousReport();
     } else {
       setPreviousReport(null); 
       if(isLoadingPreviousReport) setIsLoadingPreviousReport(false);
     }
-  }, [selectedMheDetails, isInspectionSetupConfirmed]); 
+  }, [selectedMheDetails, isInspectionSetupConfirmed, toast]); 
 
   const handleStartInspectionSetup = () => {
     if (!selectedDepartmentId) {
@@ -306,16 +258,13 @@ export default function InspectionPage() {
     setPreviousReport(null); 
   };
 
-
   const handleQrScanOrSelect = (itemId: string) => {
     const itemToInspect = masterChecklist.find(i => i.id === itemId);
     if (itemToInspect) {
       setCurrentItemIdToInspect(itemToInspect.id);
       setIsModalOpen(true);
     } else {
-      if (typeof window !== 'undefined') {
-        toast({ title: "Error", description: "Checklist item not found.", variant: "destructive" });
-      }
+      toast({ title: "Error", description: "Checklist item not found.", variant: "destructive" });
     }
   };
 
@@ -326,7 +275,6 @@ export default function InspectionPage() {
             ? { ...item, is_safe: isSafe, photo_url: photoUrl, timestamp: new Date().toISOString(), completed: true, remarks: remarks }
             : item
         );
-
         const stillPendingItems = updatedItems.filter(i => !i.completed);
         if (stillPendingItems.length > 0) {
             setCurrentItemIdToInspect(stillPendingItems[0].checklistItemId);
@@ -342,10 +290,9 @@ export default function InspectionPage() {
     !inspectionItems.find(iItem => iItem.checklistItemId === mItem.id)?.completed
   ), [masterChecklist, inspectionItems]);
 
-
   const handleSubmitReport = async () => {
-    if (!isInspectionComplete || !user || !selectedMheId || totalItemsCount === 0) {
-        if (totalItemsCount === 0 && typeof window !== 'undefined') {
+    if (!isInspectionComplete || !user || !selectedMheDetails || totalItemsCount === 0) {
+        if (totalItemsCount === 0) {
             toast({ title: "Cannot Submit", description: "No checklist items were available for this inspection.", variant: "destructive" });
         }
         return;
@@ -354,87 +301,75 @@ export default function InspectionPage() {
 
     const overallStatus = hasUnsafeItems ? 'Unsafe' : 'Safe';
     const reportDate = new Date().toISOString();
-    const reportId = uuidv4();
 
-    const reportItemsForStorage = inspectionItems.map(item => ({
-      checklistItemId: item.checklistItemId,
-      part_name: item.part_name,
-      question: item.question,
+    // Prepare report items for API submission
+    const reportItemsForApi = inspectionItems.map(item => ({
+      checklist_item_id_fk: item.checklistItemId, // Link to master item
+      part_name_snapshot: item.part_name,
+      question_snapshot: item.question,
       is_safe: item.is_safe,
-      photo_url: item.photo_url,
+      photo_url: item.photo_url, // This will be a base64 data URI
       timestamp: item.timestamp,
       remarks: item.remarks,
     }));
 
-    const newReport: StoredInspectionReport = {
-      id: reportId,
-      unitId: selectedMheDetails?.unit_code || selectedMheId, 
+    const newReportPayload = {
+      unit_id_fk: selectedMheDetails.id, // Use the UUID of the MHE Unit
+      unit_code_display: selectedMheDetails.unit_code,
       date: reportDate,
-      operator: user.username,
+      operator_username: user.username,
       status: overallStatus,
-      items: reportItemsForStorage,
+      user_id_fk: user.id, // Assuming user object has id from API
+      items: reportItemsForApi,
     };
 
     try {
-      const allReports = getFromLocalStorage<StoredInspectionReport[]>(REPORTS_STORAGE_KEY, []);
-      allReports.push(newReport);
-      saveToLocalStorage(REPORTS_STORAGE_KEY, allReports);
+      const savedReport = await apiService.addInspectionReport(newReportPayload);
+      toast({
+        title: "Report Submitted",
+        description: `Inspection report for MHE ${selectedMheDetails.unit_code} has been saved via API.`,
+      });
 
-      if (typeof window !== 'undefined') {
-        toast({
-          title: "Report Submitted",
-          description: `Inspection report for MHE ${newReport.unitId} has been saved to local storage.`,
-        });
-      }
-
-      if (newReport.status === 'Unsafe') {
-        const unsafeItemsForDowntimeLog: DowntimeUnsafeItem[] = newReport.items
+      if (savedReport.status === 'Unsafe') {
+        const unsafeItemsForDowntimeLog: DowntimeUnsafeItem[] = (savedReport.items || [])
           .filter(item => item.is_safe === false)
           .map(item => ({
-            part_name: item.part_name,
+            part_name: item.part_name_snapshot, // Use snapshot
             remarks: item.remarks || null,
-            photo_url: item.photo_url || null,
+            photo_url: item.photo_url || null, // Data URI
           }));
 
-        let downtimeReason = `Unit ${newReport.unitId} failed inspection.`;
+        let downtimeReason = `Unit ${savedReport.unit_code_display} failed inspection.`;
         if (unsafeItemsForDowntimeLog.length > 0) {
           downtimeReason += ` ${unsafeItemsForDowntimeLog.length} item(s) reported as unsafe.`;
         }
 
-        const newDowntimeLogEntry: StoredDowntimeLog = {
-          id: uuidv4(),
-          unitId: newReport.unitId,
+        const newDowntimeLogPayload: Omit<StoredDowntimeLog, 'id' | 'logged_at'> = { // API will set id and logged_at
+          unit_id_fk: selectedMheDetails.id, // MHE Unit UUID
+          unit_code_display: selectedMheDetails.unit_code,
           reason: downtimeReason,
-          startTime: reportDate,
-          endTime: null,
-          loggedAt: reportDate,
-          unsafeItems: unsafeItemsForDowntimeLog.length > 0 ? unsafeItemsForDowntimeLog : undefined,
-          sourceReportId: newReport.id, 
+          start_time: reportDate,
+          end_time: null,
+          user_id_fk: user.id,
+          unsafe_items: unsafeItemsForDowntimeLog.length > 0 ? unsafeItemsForDowntimeLog : undefined,
+          source_report_id_fk: savedReport.id, // ID of the inspection report from API response
         };
         
-        const allDowntimeLogs = getFromLocalStorage<StoredDowntimeLog[]>(DOWNTIME_STORAGE_KEY, []);
-        allDowntimeLogs.push(newDowntimeLogEntry);
-        saveToLocalStorage(DOWNTIME_STORAGE_KEY, allDowntimeLogs);
-        
-        if (typeof window !== 'undefined') {
-          toast({
-              title: "Downtime Logged Automatically",
-              description: `Unsafe unit ${newReport.unitId}. Downtime logged with ${unsafeItemsForDowntimeLog.length} unsafe item(s).`,
-              variant: "default"
-          });
-        }
-      }
-      resetInspectionState(true); 
-
-    } catch (error) {
-      console.error("Error submitting report to localStorage:", error);
-      if (typeof window !== 'undefined') {
+        await apiService.addDowntimeLog(newDowntimeLogPayload);
         toast({
-          title: "Submission Error",
-          description: (error instanceof Error) ? error.message : "Could not save data to local storage.",
-          variant: "destructive",
+            title: "Downtime Logged Automatically",
+            description: `Unsafe unit ${savedReport.unit_code_display}. Downtime logged with ${unsafeItemsForDowntimeLog.length} unsafe item(s) via API.`,
+            variant: "default"
         });
       }
+      resetInspectionState(true); 
+    } catch (error) {
+      console.error("Error submitting report via API:", error);
+      toast({
+        title: "Submission Error",
+        description: (error instanceof Error) ? error.message : "Could not save data via API.",
+        variant: "destructive",
+      });
     } finally {
       setIsSubmittingReport(false);
     }
@@ -444,7 +379,7 @@ export default function InspectionPage() {
     return (
       <div className="flex h-[calc(100vh-200px)] items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-3 text-muted-foreground">Loading setup data...</p>
+        <p className="ml-3 text-muted-foreground">Loading setup data from API...</p>
       </div>
     );
   }
@@ -476,7 +411,6 @@ export default function InspectionPage() {
                 </SelectContent>
               </Select>
             </div>
-
             <div className="space-y-2">
               <Label htmlFor="mheSelect" className="flex items-center"><TruckIcon className="mr-2 h-4 w-4 text-muted-foreground"/>MHE ID</Label>
               <Select value={selectedMheId} onValueChange={setSelectedMheId} disabled={!selectedDepartmentId || filteredMHEs.length === 0}>
@@ -496,7 +430,6 @@ export default function InspectionPage() {
                 </SelectContent>
               </Select>
             </div>
-            
             <Button onClick={handleStartInspectionSetup} size="lg" className="w-full text-base py-3" disabled={!selectedDepartmentId || !selectedMheId || isLoadingChecklist || (departments.length === 0 || filteredMHEs.length === 0 && !!selectedDepartmentId) }>
               {isLoadingChecklist ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
               Start Inspection for {selectedMheDetails?.unit_code || "Selected MHE"}
@@ -517,12 +450,11 @@ export default function InspectionPage() {
     );
   }
 
-
   if (isLoadingChecklist) {
     return (
       <div className="flex h-[calc(100vh-200px)] items-center justify-center">
         <Loader2 className="h-12 w-12 animate-spin text-primary" />
-        <p className="ml-3 text-muted-foreground">Loading checklist items...</p>
+        <p className="ml-3 text-muted-foreground">Loading checklist items from API...</p>
       </div>
     );
   }
@@ -537,7 +469,7 @@ export default function InspectionPage() {
             Inspection: {selectedMheDetails?.name || selectedMheDetails?.unit_code || selectedMheId}
           </CardTitle>
           <CardDescription>
-            Complete all checklist items to ensure equipment safety. Data saved to local storage.
+            Complete all checklist items to ensure equipment safety. Data saved via API.
             {totalItemsCount === 0 && " No checklist items loaded. Please configure them in Data Management."}
             {isInspectionComplete && totalItemsCount > 0 && " All items inspected."}
           </CardDescription>
@@ -561,7 +493,7 @@ export default function InspectionPage() {
             </CardHeader>
             <CardContent>
                 {isLoadingPreviousReport ? (
-                    <div className="flex items-center text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading previous report...</div>
+                    <div className="flex items-center text-muted-foreground"><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading previous report from API...</div>
                 ) : previousReport ? (
                     <Accordion type="single" collapsible className="w-full" defaultValue="previous-report-details">
                         <AccordionItem value="previous-report-details">
@@ -579,25 +511,25 @@ export default function InspectionPage() {
                                 </div>
                             </AccordionTrigger>
                             <AccordionContent className="pt-4 space-y-3">
-                                <p><span className="font-semibold">Operator:</span> {previousReport.operator}</p>
+                                <p><span className="font-semibold">Operator:</span> {previousReport.operator_username}</p>
                                 <p><span className="font-semibold">Report ID:</span> <span className="text-xs font-mono">{previousReport.id}</span></p>
                                 {previousReport.status === 'Unsafe' && previousReport.items.some(item => item.is_safe === false) && (
                                     <div>
                                         <h4 className="font-semibold text-destructive mb-2">Unsafe Items Noted:</h4>
                                         <ul className="space-y-3">
                                             {previousReport.items.filter(item => item.is_safe === false).map((item, index) => (
-                                                <li key={`unsafe-${index}`} className="flex items-start space-x-3 p-2 border-l-4 border-destructive bg-destructive/5 rounded-md">
+                                                <li key={`unsafe-${index}-${item.checklistItemId || index}`} className="flex items-start space-x-3 p-2 border-l-4 border-destructive bg-destructive/5 rounded-md">
                                                     <div className="flex-shrink-0 w-16 h-12 relative">
                                                         {isClickablePhoto(item.photo_url) ? (
-                                                          <div role="button" tabIndex={0} onClick={() => openImageModal(item.photo_url!, item.part_name || 'Unsafe item image')} onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') openImageModal(item.photo_url!, item.part_name || 'Unsafe item image');}} className="relative group block w-full h-full p-0 border-none bg-transparent cursor-pointer">
+                                                          <div role="button" tabIndex={0} onClick={() => openImageModal(item.photo_url!, item.part_name_snapshot || 'Unsafe item image')} onKeyDown={(e) => { if(e.key === 'Enter' || e.key === ' ') openImageModal(item.photo_url!, item.part_name_snapshot || 'Unsafe item image');}} className="relative group block w-full h-full p-0 border-none bg-transparent cursor-pointer">
                                                             <Image
                                                               src={item.photo_url!}
-                                                              alt={item.part_name || 'Unsafe item image'}
+                                                              alt={item.part_name_snapshot || 'Unsafe item image'}
                                                               width={64}
                                                               height={48}
                                                               objectFit="cover"
                                                               className="rounded-md group-hover:opacity-80 transition-opacity"
-                                                              data-ai-hint={item.part_name ? item.part_name.toLowerCase().split(' ').slice(0,2).join(' ') : "defect detail"}
+                                                              data-ai-hint={item.part_name_snapshot ? item.part_name_snapshot.toLowerCase().split(' ').slice(0,2).join(' ') : "defect detail"}
                                                               onError={(e) => { (e.target as HTMLImageElement).src = PLACEHOLDER_IMAGE_DATA_URL; }}
                                                             />
                                                             <ZoomIn className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-5 w-5 text-white opacity-0 group-hover:opacity-100 transition-opacity bg-black/50 rounded-full p-0.5" />
@@ -609,7 +541,7 @@ export default function InspectionPage() {
                                                         )}
                                                     </div>
                                                     <div className="flex-grow">
-                                                        <p className="font-medium text-sm">{item.part_name}</p>
+                                                        <p className="font-medium text-sm">{item.part_name_snapshot}</p>
                                                         {item.remarks && <p className="text-xs text-muted-foreground mt-0.5">{item.remarks}</p>}
                                                     </div>
                                                 </li>
@@ -624,7 +556,7 @@ export default function InspectionPage() {
                         </AccordionItem>
                     </Accordion>
                 ) : (
-                    <p className="text-muted-foreground">No previous inspection data found for this MHE unit.</p>
+                    <p className="text-muted-foreground">No previous inspection data found for this MHE unit via API.</p>
                 )}
             </CardContent>
         </Card>
@@ -635,7 +567,7 @@ export default function InspectionPage() {
             <CardHeader><CardTitle className="text-xl text-destructive">No Inspection Items</CardTitle></CardHeader>
             <CardContent>
                 <p className="text-muted-foreground">
-                    There are no active inspection items configured. Please go to the 
+                    There are no active inspection items configured in the API. Please go to the 
                     <Link href="/data-management" className="text-primary hover:underline mx-1">Data Management</Link> 
                     page to add checklist items before starting an inspection.
                 </p>
@@ -644,7 +576,6 @@ export default function InspectionPage() {
       ) : isInspectionSetupConfirmed && !isInspectionComplete ? (
         <>
           <CompletionProgress completedItems={completedItemsCount} totalItems={totalItemsCount} />
-
           <Card className="shadow-md">
             <CardHeader>
               <CardTitle className="text-xl">Inspect Item</CardTitle>
@@ -686,7 +617,6 @@ export default function InspectionPage() {
               </Button>
             </CardContent>
           </Card>
-
           <Card className="shadow-md">
             <CardHeader><CardTitle className="text-xl">Checklist Status</CardTitle></CardHeader>
             <CardContent>
@@ -774,4 +704,3 @@ export default function InspectionPage() {
     </div>
   );
 }
-
